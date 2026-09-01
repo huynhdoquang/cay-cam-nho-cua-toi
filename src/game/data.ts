@@ -16,6 +16,55 @@ export const FIRST_HARVEST_FRUITS = 8;
 export const FRUIT_REGROWTH_DAYS = 7;
 export const FRUIT_REGROWTH_COUNT = 5;
 
+/* ---------- narrative layer: sương mù & bí mật khu vườn ---------- */
+
+export const FOG_START = 100;
+export const FOG_FIRST_HARVEST = 25; // sương tan sau thu hoạch đầu tiên
+export const FOG_REGROWTH_HARVEST = 12; // mỗi mùa quả sau đó
+export const ABSENCE_DROP_DAYS = 2; // vắng >= N ngày → rụng 1 quả
+
+export interface LandmarkDef {
+  id: string;
+  at: number; // hé lộ khi sương ≤ at (%)
+  name: string;
+  story: string;
+  hint: string;
+}
+
+/** Thứ tự khám phá — mỗi mùa thu hoạch là một chương. */
+export const LANDMARKS: LandmarkDef[] = [
+  {
+    id: "stream", at: 75, name: "Con suối nhỏ",
+    story: "Nghe thấy không? Tiếng róc rách ấy… Con suối vừa tỉnh giấc sau giấc ngủ dài trong sương. Nó bảo nó nhớ tiếng cười lắm.",
+    hint: "Thu hoạch mùa đầu tiên",
+  },
+  {
+    id: "bridge", at: 62, name: "Chiếc cầu gỗ",
+    story: "Ngày xưa có người bắc cầu qua suối để sang thăm khu vườn bên kia. Sương tan đến đâu, cầu lại hiện ra đến đó — như một lời hẹn cũ.",
+    hint: "Để sương tan còn 62%",
+  },
+  {
+    id: "cottage", at: 50, name: "Ngôi nhà gỗ",
+    story: "Ngôi nhà của người giữ vườn trước. Trong lò sưởi vẫn còn ấm, như thể họ chỉ vừa đi đâu đó… và sẽ quay lại khi vườn xanh như cũ.",
+    hint: "Để sương tan còn 50%",
+  },
+  {
+    id: "windmill", at: 38, name: "Cối xay gió",
+    story: "Cối xay gió quay rồi! Người ta kể nó xay những giấc mơ thành nắng, rải đều khắp vườn để chẳng cây nào phải lớn trong buồn bã.",
+    hint: "Để sương tan còn 38%",
+  },
+  {
+    id: "gate", at: 24, name: "Cổng đá cổ",
+    story: "Cổng đá cổ — biên giới của khu vườn. Tương truyền ai bước qua cổng sẽ gặp lại khu vườn đẹp nhất trong ký ức của mình. Của bạn là đây chứ?",
+    hint: "Để sương tan còn 24%",
+  },
+  {
+    id: "rainbow", at: 8, name: "Cầu vồng sau sương",
+    story: "Sương tan gần hết rồi… Cảm ơn bạn — và cảm ơn cả cây cam. Khu vườn này từng bị lãng quên, nhưng giờ nó là nhà của bạn rồi đấy.",
+    hint: "Để sương tan còn 8%",
+  },
+];
+
 /** Cây cam duy nhất của khu vườn. */
 export const TREE = {
   name: "Cam Sành",

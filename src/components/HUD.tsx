@@ -55,6 +55,16 @@ export function HUD({ state, done, total, onToggleMute, onHelp }: Props) {
           </span>
         </div>
 
+        {state.fog > 0 && (
+          <div
+            className="chip hidden bg-skyy-300 text-[13px] text-[#14507a] sm:inline-flex sm:text-sm"
+            title={`Sương mù bao phủ ${state.fog}% khu vườn — mỗi mùa thu hoạch làm sương tan bớt`}
+          >
+            <Icon name="mist" size={14} />
+            <span key={state.fog} className="bump">{state.fog}%</span>
+          </div>
+        )}
+
         <button onClick={onHelp} className="hud-btn h-9 w-9" title="Luật chơi" aria-label="Luật chơi">
           <Icon name="help" size={17} />
         </button>
@@ -71,8 +81,7 @@ export function HUD({ state, done, total, onToggleMute, onHelp }: Props) {
         >
           <span className="flex items-center gap-1.5">
             <Icon name="clipboard" size={14} className="text-leaf-700" />
-            <span className="hidden xs:inline sm:inline">{done}/{total}</span>
-            <span className="xs:hidden sm:hidden inline">{done}/{total}</span>
+            {done}/{total}
           </span>
           <span className="h-2.5 w-20 sm:w-28 overflow-hidden rounded-full border-2 border-bark-800/50 bg-cream-300">
             <span

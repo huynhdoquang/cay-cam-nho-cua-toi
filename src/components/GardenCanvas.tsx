@@ -64,6 +64,8 @@ export function GardenCanvas({ state, engineRef, onFruitPick }: Props) {
     if (state.level >= 10 && state.fruitsLeft > 0 && e.unpickedCount() !== state.fruitsLeft) {
       e.syncFruits(state.fruitsLeft, state.harvests === 0 ? 8 : 5);
     }
+    e.setFog(state.fog);
+    e.setDiscovered(state.discovered.map((d) => d.id));
   });
 
   useEffect(() => {

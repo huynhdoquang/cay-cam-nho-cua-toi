@@ -58,6 +58,8 @@ export class GardenEngine {
   private daisies: { x: number; y: number; c: string }[] = [];
   private fireflies: { t: number; s: number; p: number }[] = [];
   private butterflies = [{ t: 2.1, s: 26, yb: 0.3, c: "#ffa733" }, { t: 7.7, s: 19, yb: 0.42, c: "#9c8ce8" }];
+  private fog = 100;
+  private landmarks: Set<string> = new Set();
 
   private chibiMode: "idle" | "water" | "celebrate" | "sleep" = "idle";
   private chibiT = 0;
@@ -176,6 +178,22 @@ export class GardenEngine {
   setWilted(w: boolean) {
     if (w && !this.wilted) this.wiltLeavesSpawned = false;
     this.wilted = w;
+  }
+
+  setFog(f: number) { this.fog = Math.max(0, Math.min(100, f)); }
+
+  setDiscovered(ids: string[]) { this.landmarks = new Set(ids); }
+
+  revealFx() {
+    const g = this.geom;
+    this.rings.push({ x: g.cx, y: g.cy - 30 * this.u, r: 20 * this.u, max: 280 * this.u, t: 0 });
+    for (let i = 0; i < 28; i++) {
+      this.sparkAt(
+        this.W * (0.12 + Math.random() * 0.76),
+        this.H * (0.2 + Math.random() * 0.45),
+        Math.random() > 0.4 ? "#ffe28a" : "#fff9ea"
+      );
+    }
   }
 
   setSkin(s: SkinLook) { this.skin = s; }
@@ -398,8 +416,10 @@ export class GardenEngine {
     this.drawSky();
     this.drawClouds();
     this.drawHills();
+    this.drawLandmarksBack();
     if (this.decor.fence) this.drawFence();
     this.drawGround();
+    this.drawStream();
     if (this.decor.mushrooms) this.drawMushrooms();
     if (this.decor.flowers) this.drawFlowerBed();
 
@@ -417,13 +437,14 @@ export class GardenEngine {
     this.drawTreeShadow();
     this.drawTree(tx, gy, cx, cy, r, dim.h * this.u, dim.w * this.u);
     if (this.level >= 10 && this.fruits.length > 0) this.drawFruits();
-    if (this.level >= 13) this.drawFireflies();
+    if (this.level >= 13 || this.landmarks.has("cottage")) this.drawFireflies();
 
     if (this.decor.lantern) this.drawLantern();
     this.drawChibi();
     this.drawParticles();
     this.drawRings();
     this.drawFloaters();
+    this.drawFog();
     ctx.restore();
   }
 
@@ -1119,6 +1140,240 @@ export class GardenEngine {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+
+  /* ---------- narrative: landmarks & fog ---------- */
+
+  private drawLandmarksBack() {
+    const { ctx, W, H, u } = this;
+    const ink = "#3b2412";
+
+    // cầu vồng — sau cùng của bầu trời
+    if (this.landmarks.has("rainbow")) {
+      const cx = W * 0.5;
+      const cy = H * 0.8;
+      const R = Math.min(W, H) * 0.66;
+      const cols = ["rgba(232,90,90,0.4)", "rgba(255,167,51,0.4)", "rgba(255,217,61,0.4)", "rgba(122,203,95,0.4)", "rgba(79,184,232,0.4)", "rgba(156,140,232,0.4)"];
+      ctx.lineCap = "round";
+      cols.forEach((c, i) => {
+        ctx.strokeStyle = c;
+        ctx.lineWidth = 7 * u;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R - i * 7.5 * u, Math.PI * 1.06, Math.PI * 1.94);
+        ctx.stroke();
+      });
+    }
+
+    // cổng đá cổ
+    if (this.landmarks.has("gate")) {
+      const x = W * 0.68;
+      const y = H * 0.63;
+      ctx.fillStyle = "#9aa5ad";
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.roundRect(x - 26 * u, y - 40 * u, 11 * u, 42 * u, 3 * u);
+      ctx.roundRect(x + 15 * u, y - 40 * u, 11 * u, 42 * u, 3 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#8a959d";
+      ctx.beginPath();
+      ctx.roundRect(x - 32 * u, y - 50 * u, 64 * u, 12 * u, 4 * u);
+      ctx.fill(); ctx.stroke();
+      // rêu + ký tự phát sáng
+      ctx.fillStyle = "#58b84e";
+      ctx.beginPath();
+      ctx.ellipse(x - 24 * u, y - 2 * u, 6 * u, 3 * u, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 22 * u, y - 40 * u, 5 * u, 2.6 * u, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const glow = 0.5 + 0.5 * Math.sin(this.time * 2.2);
+      ctx.fillStyle = `rgba(255,217,61,${(0.45 + 0.5 * glow).toFixed(3)})`;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x - 10 * u + i * 10 * u, y - 44 * u, 1.8 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // cối xay gió
+    if (this.landmarks.has("windmill")) {
+      const x = W * 0.095;
+      const y = H * 0.615;
+      ctx.fillStyle = "#d9bd85";
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.moveTo(x - 13 * u, y + 34 * u);
+      ctx.lineTo(x - 7 * u, y - 12 * u);
+      ctx.lineTo(x + 7 * u, y - 12 * u);
+      ctx.lineTo(x + 13 * u, y + 34 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#a9713a";
+      ctx.beginPath();
+      ctx.moveTo(x - 10 * u, y - 10 * u);
+      ctx.lineTo(x, y - 26 * u);
+      ctx.lineTo(x + 10 * u, y - 10 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // cánh quạt xoay
+      const hubY = y - 6 * u;
+      ctx.save();
+      ctx.translate(x, hubY);
+      ctx.rotate(this.time * 0.9);
+      ctx.fillStyle = "#fff3dc";
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.roundRect(-3 * u, -34 * u, 6 * u, 32 * u, 3 * u);
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = "#7a4a21";
+      ctx.beginPath();
+      ctx.arc(x, hubY, 4 * u, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // ngôi nhà gỗ
+    if (this.landmarks.has("cottage")) {
+      const x = W * 0.885;
+      const y = H * 0.655;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      // khói bếp
+      for (let i = 0; i < 3; i++) {
+        const st = (this.time * 0.5 + i * 0.33) % 1;
+        ctx.fillStyle = `rgba(230,230,230,${(0.5 * (1 - st)).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x + 14 * u + st * 4 * u, y - 34 * u - st * 26 * u, (3 + st * 4) * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#8b5a2b";
+      ctx.beginPath();
+      ctx.roundRect(x + 10 * u, y - 34 * u, 8 * u, 16 * u, 2 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ead3a3";
+      ctx.beginPath();
+      ctx.roundRect(x - 24 * u, y - 18 * u, 48 * u, 32 * u, 4 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#a9713a";
+      ctx.beginPath();
+      ctx.moveTo(x - 30 * u, y - 16 * u);
+      ctx.lineTo(x, y - 38 * u);
+      ctx.lineTo(x + 30 * u, y - 16 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // cửa sổ ấm sáng
+      const warm = 0.75 + 0.25 * Math.sin(this.time * 3.1);
+      ctx.fillStyle = `rgba(255,200,90,${warm.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.roundRect(x - 16 * u, y - 10 * u, 12 * u, 11 * u, 2 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - 10 * u, y - 10 * u);
+      ctx.lineTo(x - 10 * u, y + 1 * u);
+      ctx.moveTo(x - 16 * u, y - 4.5 * u);
+      ctx.lineTo(x - 4 * u, y - 4.5 * u);
+      ctx.stroke();
+      // cửa ra vào
+      ctx.fillStyle = "#7a4a21";
+      ctx.beginPath();
+      ctx.roundRect(x + 4 * u, y - 6 * u, 12 * u, 20 * u, [4 * u, 4 * u, 0, 0]);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.arc(x + 13 * u, y + 4 * u, 1.4 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawStream() {
+    const { ctx, W, H, u } = this;
+    if (!this.landmarks.has("stream")) return;
+    const y0 = H * 0.745;
+    const xEnd = W * 0.6;
+    ctx.lineCap = "round";
+    // dòng nước
+    ctx.strokeStyle = "#4fb8e8";
+    ctx.lineWidth = 11 * u;
+    ctx.beginPath();
+    ctx.moveTo(-6, y0 + 4 * u);
+    for (let x = 0; x <= xEnd; x += 24 * u) {
+      const wv = Math.sin(x / (34 * u) + this.time * 1.6) * 3 * u;
+      ctx.quadraticCurveTo(x + 12 * u, y0 + wv - 3 * u, x + 24 * u, y0 + 4 * u + Math.sin((x + 24 * u) / (40 * u)) * 2 * u);
+    }
+    ctx.stroke();
+    // lấp lánh chảy
+    ctx.strokeStyle = "rgba(181,232,248,0.95)";
+    ctx.lineWidth = 2.4 * u;
+    for (let i = 0; i < 3; i++) {
+      const sx = ((this.time * 34 * u + i * 90 * u) % (xEnd + 60 * u)) - 30 * u;
+      const sy = y0 + 3 * u + Math.sin(sx / (34 * u) + this.time * 1.6) * 2 * u;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + 14 * u, sy - 1.5 * u);
+      ctx.stroke();
+    }
+    // cầu gỗ bắc qua suối
+    if (this.landmarks.has("bridge")) {
+      const bx = W * 0.3;
+      const by = y0;
+      ctx.fillStyle = "#a9713a";
+      ctx.strokeStyle = "#3b2412";
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.roundRect(bx - 26 * u, by - 9 * u, 52 * u, 9 * u, 3 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        ctx.moveTo(bx + i * 15 * u, by - 9 * u);
+        ctx.lineTo(bx + i * 15 * u, by);
+      }
+      ctx.stroke();
+      // lan can
+      ctx.strokeStyle = "#7a4a21";
+      ctx.lineWidth = 3 * u;
+      ctx.beginPath();
+      ctx.moveTo(bx - 26 * u, by - 16 * u);
+      ctx.lineTo(bx + 26 * u, by - 16 * u);
+      ctx.stroke();
+      ctx.lineWidth = 2.2 * u;
+      ctx.strokeStyle = "#3b2412";
+      for (const dx of [-22, 0, 22]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + dx * u, by - 9 * u);
+        ctx.lineTo(bx + dx * u, by - 16 * u);
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawFog() {
+    const f = this.fog / 100;
+    if (f <= 0) return;
+    const { ctx, W, H, u } = this;
+    // lớp mờ phủ toàn cảnh
+    ctx.fillStyle = `rgba(226,238,244,${(0.36 * f).toFixed(3)})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    // những dải sương trôi
+    const blobs = [
+      { bx: 0.15, by: 0.55, s: 1.35, sp: 9 },
+      { bx: 0.45, by: 0.4, s: 1.6, sp: 6 },
+      { bx: 0.75, by: 0.58, s: 1.25, sp: 11 },
+      { bx: 0.95, by: 0.33, s: 1.4, sp: 7 },
+      { bx: 0.3, by: 0.74, s: 1.15, sp: 8 },
+    ];
+    for (const b of blobs) {
+      const span = W + 320 * u;
+      const x = ((b.bx * span + this.time * b.sp * u) % span) - 160 * u;
+      const y = b.by * H + Math.sin(this.time * 0.5 + b.bx * 10) * 8 * u;
+      const r = 120 * u * b.s;
+      const g = ctx.createRadialGradient(x, y, r * 0.08, x, y, r);
+      g.addColorStop(0, `rgba(240,247,250,${(0.5 * f).toFixed(3)})`);
+      g.addColorStop(1, "rgba(240,247,250,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
   }
 
   private drawFloaters() {

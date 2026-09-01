@@ -1,5 +1,5 @@
 import type { GameState } from "../game/types";
-import { FIRST_HARVEST_LEVEL, FRUIT_REGROWTH_COUNT, FRUIT_REGROWTH_DAYS, TREE, xpForLevel, xpWindow, stageName } from "../game/data";
+import { FIRST_HARVEST_LEVEL, FRUIT_REGROWTH_COUNT, FRUIT_REGROWTH_DAYS, LANDMARKS, TREE, xpForLevel, xpWindow, stageName } from "../game/data";
 import { Icon } from "./icons";
 
 interface Props {
@@ -92,6 +92,68 @@ export function TreePanel({ state }: Props) {
             Còn {xpForLevel(FIRST_HARVEST_LEVEL) - state.xp > 0 ? xpForLevel(FIRST_HARVEST_LEVEL) - state.xp : 0} KN nữa là cây đậu quả đầu tiên!
           </p>
         )}
+      </div>
+
+      {/* sương mù khu vườn */}
+      <div className="rounded-xl border-2 border-skyy-600/50 bg-gradient-to-b from-skyy-300/80 to-cream-100 p-3">
+        <h3 className="flex items-center justify-between font-display text-sm font-extrabold text-[#14507a]">
+          <span className="flex items-center gap-1.5">
+            <Icon name="mist" size={16} />
+            Sương mù khu vườn
+          </span>
+          <span className="chip chip-sm bg-skyy-400 text-[11px] text-bark-900">{state.fog}%</span>
+        </h3>
+        <div className="mt-2 h-3.5 overflow-hidden rounded-full border-2 border-[#14507a]/40 bg-cream-100">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-skyy-400 to-skyy-600 transition-all duration-700"
+            style={{ width: `${state.fog}%` }}
+          />
+        </div>
+        <p className="mt-1.5 font-body text-[11.5px] font-semibold leading-snug text-[#14507a]">
+          {state.fog > 0
+            ? `Thu hoạch mỗi mùa để sương tan — còn ${LANDMARKS.filter((l) => !state.discovered.some((d) => d.id === l.id)).length} bí mật đang chờ hé lộ.`
+            : "Sương đã tan hết. Khu vườn giờ là của bạn — và của bé Cam."}
+        </p>
+      </div>
+
+      {/* nhật ký khu vườn */}
+      <div className="rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
+        <h3 className="mb-2 flex items-center gap-1.5 font-display text-sm font-extrabold text-bark-900">
+          <Icon name="book" size={15} className="text-leaf-700" />
+          Nhật ký khu vườn
+          <span className="ml-auto font-body text-[11px] font-bold text-bark-600">
+            {state.discovered.length}/{LANDMARKS.length}
+          </span>
+        </h3>
+        <ul className="flex flex-col gap-1.5">
+          {LANDMARKS.map((l) => {
+            const found = state.discovered.find((d) => d.id === l.id);
+            return found ? (
+              <li key={l.id} className="flex items-start gap-2 rounded-lg border-2 border-leaf-600/40 bg-leaf-200/60 p-2">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-leaf-900 bg-leaf-400 text-leaf-900">
+                  <Icon name="check" size={13} />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-display text-[12.5px] font-extrabold leading-tight text-leaf-900">
+                    {l.name}
+                    <span className="ml-1.5 font-body text-[10px] font-bold text-leaf-800/80">ngày {found.day}</span>
+                  </p>
+                  <p className="font-body text-[11px] font-medium leading-snug text-leaf-900/85">{l.story}</p>
+                </div>
+              </li>
+            ) : (
+              <li key={l.id} className="flex items-center gap-2 rounded-lg border-2 border-dashed border-bark-700/30 bg-cream-200/60 p-2">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-bark-700/40 bg-cream-300 text-bark-600">
+                  <Icon name="mist" size={13} />
+                </span>
+                <div>
+                  <p className="font-display text-[12.5px] font-extrabold leading-tight text-bark-600">? ? ?</p>
+                  <p className="font-body text-[11px] font-medium text-bark-600/80">{l.hint}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       {/* thống kê */}

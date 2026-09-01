@@ -9,7 +9,7 @@ import { HUD } from "./components/HUD";
 import { TaskPanel } from "./components/TaskPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { TreePanel } from "./components/TreePanel";
-import { HarvestModal, HelpModal, StartScreen, Toasts } from "./components/Modals";
+import { HarvestModal, HelpModal, StartScreen, StoryModal, Toasts } from "./components/Modals";
 import { Icon } from "./components/icons";
 
 type Tab = "tasks" | "shop" | "tree";
@@ -64,6 +64,16 @@ export default function App() {
       } catch { /* noop */ }
     }
   }, [state.started]);
+
+  // thông báo một lần sau khi load (vd: rụng quả vì vắng nhà)
+  const notifiedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.started && state.notice && notifiedRef.current !== state.notice) {
+      notifiedRef.current = state.notice;
+      toast(state.notice, "warn");
+      api.clearNotice();
+    }
+  }, [state.started, state.notice, toast, api]);
 
   const done = state.tasks.filter((t) => t.done).length;
   const total = state.tasks.length;
@@ -127,6 +137,9 @@ export default function App() {
 
       {!state.started && <StartScreen hasSave={state.hasSave} day={saveDay} onStart={api.start} />}
       {state.started && state.harvestPhase === "done" && <HarvestModal state={state} api={api} />}
+      {state.started && state.harvestPhase !== "done" && state.pendingStories.length > 0 && (
+        <StoryModal state={state} api={api} />
+      )}
       {help && <HelpModal onClose={() => setHelp(false)} />}
       <Toasts list={toasts} />
     </div>

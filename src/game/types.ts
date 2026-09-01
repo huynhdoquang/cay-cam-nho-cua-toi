@@ -55,6 +55,11 @@ export interface ShopItem {
 export interface GameState {
   started: boolean;
   hasSave: boolean;
+  notice: string | null; // thông báo một lần sau khi load (vd: rụng quả vì vắng nhà)
+  fog: number; // % sương mù bao phủ khu vườn (0 = tan hết)
+  discovered: { id: string; day: number }[]; // các bí mật đã khám phá
+  pendingStories: string[]; // hàng đợi chuyện kể của Bé Sương
+  lastDate: string; // ngày chơi gần nhất (YYYY-MM-DD)
   berries: number;
   day: number;
   streak: number;

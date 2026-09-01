@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { GameState } from "../game/types";
-import { FRUIT_REGROWTH_DAYS, TREE } from "../game/data";
+import { FRUIT_REGROWTH_DAYS, LANDMARKS, TREE } from "../game/data";
 import type { GameApi } from "../game/useGame";
 import type { ToastMsg } from "../game/useGame";
 import { Icon } from "./icons";
@@ -49,7 +49,7 @@ export function HarvestModal({ state, api }: { state: GameState; api: GameApi })
         <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-leaf-600/60 bg-leaf-200/70 p-3 text-left">
           <Chibi pose="plant" size={48} />
           <p className="font-body text-[12px] font-semibold leading-snug text-leaf-900">
-            Cây cam sẽ <b>tiếp tục lớn</b> thành cổ thụ! Lứa quả mới sẽ ra sau mỗi {FRUIT_REGROWTH_DAYS} ngày — nhớ quay lại hái nhé.
+            Mùa quả khiến <b>sương mù tan bớt</b> — biết đâu khu vườn vừa hé lộ một bí mật mới? Cây cam vẫn sẽ lớn tiếp thành cổ thụ, và lứa quả sau ra mỗi {FRUIT_REGROWTH_DAYS} ngày.
           </p>
         </div>
       </div>
@@ -63,6 +63,90 @@ export function HarvestModal({ state, api }: { state: GameState; api: GameApi })
   );
 }
 
+/* ---------------- Chuyện của Bé Sương ---------------- */
+
+function MistSprite({ size = 92 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" className="floaty" aria-hidden>
+      <g>
+        <ellipse cx="50" cy="88" rx="22" ry="5" fill="rgba(43,26,12,0.15)" />
+        <path
+          d="M50 14c22 0 34 16 34 33 0 15-10 24-20 27 3 5 1 9-3 7-3-2-5-6-6-9-1.6.3-3.3.4-5 .4s-3.4-.1-5-.4c-1 3-3 7-6 9-4 2-6-2-3-7-10-3-20-12-20-27 0-17 12-33 34-33z"
+          fill="#e8f4f8"
+          stroke="#3b2412"
+          strokeWidth="3"
+          strokeLinejoin="round"
+        />
+        <path d="M30 40c4-8 11-13 20-13" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" opacity="0.8" fill="none" />
+        <circle cx="40" cy="48" r="3.4" fill="#3b2412" />
+        <circle cx="60" cy="48" r="3.4" fill="#3b2412" />
+        <circle cx="41.2" cy="46.8" r="1.1" fill="#ffffff" />
+        <circle cx="61.2" cy="46.8" r="1.1" fill="#ffffff" />
+        <path d="M45 56q5 4.5 10 0" stroke="#3b2412" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+        <circle cx="32" cy="55" r="4" fill="#ffa3a3" opacity="0.7" />
+        <circle cx="68" cy="55" r="4" fill="#ffa3a3" opacity="0.7" />
+        <g className="sparkle-f" fill="#ffd93d">
+          <path d="M16 24l1.6 3.8 3.8 1.6-3.8 1.6L16 34.8l-1.6-3.8-3.8-1.6 3.8-1.6z" />
+        </g>
+        <g className="sparkle-f" style={{ animationDelay: "0.5s" }} fill="#9c8ce8">
+          <path d="M84 30l1.4 3.2 3.2 1.4-3.2 1.4-1.4 3.2-1.4-3.2-3.2-1.4 3.2-1.4z" />
+        </g>
+        <g className="sparkle-f" style={{ animationDelay: "1s" }} fill="#ffd93d">
+          <path d="M78 68l1.2 2.8 2.8 1.2-2.8 1.2-1.2 2.8-1.2-2.8-2.8-1.2 2.8-1.2z" />
+        </g>
+      </g>
+    </svg>
+  );
+}
+
+export function StoryModal({ state, api }: { state: GameState; api: GameApi }) {
+  const id = state.pendingStories[0];
+  const beat = LANDMARKS.find((l) => l.id === id);
+  if (!beat) return null;
+  const remaining = state.pendingStories.length - 1;
+
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-night-900/80 p-4" role="dialog" aria-modal="true" aria-label={beat.name}>
+      <div className="pop-in w-full max-w-sm overflow-hidden rounded-2xl border-[3px] border-bark-700 bg-cream-200 shadow-[0_10px_0_rgba(43,26,12,0.5)]">
+        <div className="relative bg-gradient-to-b from-[#cfe8f2] to-[#eaf6f0] px-5 pb-2 pt-5 text-center">
+          <MistSprite />
+          <p className="font-display text-[12px] font-extrabold uppercase tracking-[0.18em] text-bark-600">
+            Bé Sương thì thầm…
+          </p>
+        </div>
+        <div className="p-5 pt-3 text-center">
+          <h2 className="font-display text-2xl font-extrabold text-bark-900">{beat.name}</h2>
+          <p className="mt-2 font-body text-[13.5px] font-medium leading-relaxed text-bark-700">
+            “{beat.story}”
+          </p>
+
+          <div className="mt-4 rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
+            <div className="flex items-center justify-between font-display text-[11px] font-extrabold text-bark-600">
+              <span>Sương mù khu vườn</span>
+              <span>{state.fog}%</span>
+            </div>
+            <div className="mt-1.5 h-3 overflow-hidden rounded-full border-2 border-bark-800/40 bg-skyy-300/50">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-skyy-400 to-skyy-600 transition-all duration-700"
+                style={{ width: `${state.fog}%` }}
+              />
+            </div>
+            <p className="mt-1.5 font-body text-[11px] font-semibold text-bark-600">
+              {state.fog > 0 ? "Thu hoạch mỗi mùa để sương tan thêm — còn nhiều bí mật đang chờ…" : "Sương đã tan hết — khu vườn thuộc về bạn!"}
+            </p>
+          </div>
+        </div>
+        <div className="p-4 pt-0">
+          <button onClick={api.dismissStory} className="btn btn-sky w-full py-3 text-base">
+            <Icon name="spark" size={18} />
+            {remaining > 0 ? `Nghe tiếp (${remaining} chuyện nữa)` : "Tuyệt quá, ra vườn thôi!"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Luật chơi ---------------- */
 
 const RULES: { icon: string; text: ReactNode }[] = [
@@ -71,6 +155,8 @@ const RULES: { icon: string; text: ReactNode }[] = [
   { icon: "berry", text: <>Tỷ lệ rơi: Có/Không <b>40%</b> (1–3), đo lường <b>70%</b> (3–8). <b>Crit 5%</b> nhân 5! Tưới 6 lần không rơi thì lần sau <b>chắc chắn rơi</b>.</> },
   { icon: "flame", text: <>Streak ≥ <b>7 ngày</b> cộng thêm <b>+20%</b> tỷ lệ rơi. Lỡ một ngày: mất streak và cây héo nhẹ — <b>Băng bảo vệ</b> sẽ đỡ thay.</> },
   { icon: "basket", text: <>Cây đạt <b>cấp 10</b> sẽ chín quả: tự tay <b>chạm từng quả</b> để hái. Sau đó cây vẫn lớn tiếp, cứ <b>7 ngày</b> lại ra quả mới.</> },
+  { icon: "mist", text: <>Khu vườn chìm trong <b>sương mù</b>. Mỗi mùa thu hoạch làm sương tan bớt, hé lộ suối, cầu, nhà gỗ… và những câu chuyện của <b>Bé Sương</b>.</> },
+  { icon: "drop", text: <>Cây nhớ bạn: vắng nhà <b>từ 2 ngày</b>, một quả cam có thể rụng và streak dừng lại. Ghé qua mỗi ngày nhé!</> },
   { icon: "moon", text: <>Xong nhiệm vụ? Bấm <b>Đi ngủ thôi</b> để sang ngày mới — nhiệm vụ và trần KN sẽ làm mới.</> },
 ];
 
@@ -133,6 +219,7 @@ export function StartScreen({ hasSave, day, onStart }: { hasSave: boolean; day: 
             { icon: "berry", label: "Rơi berry · crit ×5" },
             { icon: "flame", label: "Giữ chuỗi streak" },
             { icon: "sprout", label: "Cây lớn mãi không ngừng" },
+            { icon: "mist", label: "Sương mù & bí mật khu vườn" },
           ].map((f) => (
             <span key={f.label} className="chip bg-night-700 text-xs text-cream-200 border-bark-600 sm:text-sm">
               <Icon name={f.icon} size={15} className="text-tang-400" />

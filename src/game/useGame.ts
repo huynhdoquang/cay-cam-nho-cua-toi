@@ -2,11 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { GameState, PoseId, TaskKind } from "./types";
 import {
-  BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, DAILY_XP_CAP, DECOR_FLAGS, FERT_BONUS,
-  FIRST_HARVEST_FRUITS, FIRST_HARVEST_LEVEL, FRUIT_REGROWTH_COUNT, FRUIT_REGROWTH_DAYS,
-  HAIR_COLORS, PITY_LIMIT, randInt, SHOP, SHIRT_COLORS, STREAK_BONUS_RATE, TREE,
-  buildDailyTasks, colorOf, levelFromXp,
+  ABSENCE_DROP_DAYS, BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, DAILY_XP_CAP, DECOR_FLAGS, FERT_BONUS,
+  FIRST_HARVEST_FRUITS, FIRST_HARVEST_LEVEL, FOG_FIRST_HARVEST, FOG_REGROWTH_HARVEST, FOG_START,
+  FRUIT_REGROWTH_COUNT, FRUIT_REGROWTH_DAYS, HAIR_COLORS, LANDMARKS, PITY_LIMIT, randInt, SHOP,
+  SHIRT_COLORS, STREAK_BONUS_RATE, TREE, buildDailyTasks, colorOf, levelFromXp,
 } from "./data";
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 import type { GardenEngine } from "./engine";
 import { setMuted as setAudioMuted, sfx, unlockAudio } from "./audio";
 
@@ -26,6 +31,8 @@ export interface GameApi {
   removeCustom: (id: string) => void;
   onFruitPick: (x: number, y: number) => void;
   closeHarvest: () => void;
+  dismissStory: () => void;
+  clearNotice: () => void;
   toggleMute: () => void;
 }
 
@@ -35,6 +42,11 @@ function freshState(): GameState {
   return {
     started: false,
     hasSave: false,
+    notice: null,
+    fog: FOG_START,
+    discovered: [],
+    pendingStories: [],
+    lastDate: todayStr(),
     berries: 0,
     day: 1,
     streak: 0,
@@ -81,7 +93,23 @@ export function useGame({
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as GameState;
-        return { ...freshState(), ...s, started: false, hasSave: true };
+        const merged = { ...freshState(), ...s, started: false, hasSave: true };
+        // loss aversion nhẹ: vắng >= N ngày → cây buồn, rụng 1 quả (nếu có), mất streak
+        const gap = Math.floor(
+          (Date.parse(todayStr()) - Date.parse(merged.lastDate || todayStr())) / 86400000
+        );
+        if (!Number.isNaN(gap) && gap >= ABSENCE_DROP_DAYS) {
+          if (merged.fruitsLeft > 0) {
+            merged.fruitsLeft -= 1;
+            merged.notice = `Cây nhớ bạn… vắng ${gap} ngày, một quả cam đã rụng. Về kịp lúc rồi!`;
+          } else if (merged.streak > 0) {
+            merged.notice = `Bạn vắng ${gap} ngày — chuỗi ${merged.streak} ngày đành dừng lại. Cây vẫn ở đây đợi bạn!`;
+          }
+          merged.streak = 0;
+          merged.wilted = true;
+        }
+        merged.lastDate = todayStr();
+        return merged;
       }
     } catch { /* noop */ }
     return freshState();
@@ -89,10 +117,10 @@ export function useGame({
   const ref = useRef(state);
   ref.current = state;
 
-  // persist
+  // persist (kèm ngày chơi thật để tính vắng nhà)
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ ...state, started: true }));
+      localStorage.setItem(KEY, JSON.stringify({ ...state, started: true, lastDate: todayStr() }));
     } catch { /* noop */ }
   }, [state]);
 
@@ -314,6 +342,21 @@ export function useGame({
         const total = gain + bonus;
         sfx.harvest();
         e?.celebrate();
+
+        // narrative layer: mỗi mùa thu hoạch làm sương mù tan bớt
+        const fog = Math.max(0, s.fog - (isFirst ? FOG_FIRST_HARVEST : FOG_REGROWTH_HARVEST));
+        const crossed = LANDMARKS.filter((l) => fog <= l.at && !s.discovered.some((d) => d.id === l.id));
+        const discovered = [...s.discovered, ...crossed.map((l) => ({ id: l.id, day: s.day }))];
+        const pendingStories = crossed.length
+          ? [...s.pendingStories, ...crossed.map((l) => l.id)]
+          : s.pendingStories;
+        if (crossed.length) {
+          setTimeout(() => {
+            engGlobal()?.revealFx();
+            sfx.levelup();
+          }, 900);
+        }
+
         setState({
           ...s,
           fruitsLeft,
@@ -322,6 +365,9 @@ export function useGame({
           lastHarvestGain: total,
           berries: s.berries + total,
           totalBerries: s.totalBerries + total,
+          fog,
+          discovered,
+          pendingStories,
         });
         return;
       }
@@ -337,6 +383,17 @@ export function useGame({
       const s = ref.current;
       setState({ ...s, harvestPhase: "none" });
       sfx.click();
+    },
+
+    dismissStory() {
+      const s = ref.current;
+      setState({ ...s, pendingStories: s.pendingStories.slice(1) });
+      sfx.click();
+    },
+
+    clearNotice() {
+      const s = ref.current;
+      if (s.notice) setState({ ...s, notice: null });
     },
 
     toggleMute() {
