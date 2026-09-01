@@ -79,6 +79,29 @@ export function Chibi({ pose, hair = "#7a4a21", shirt = "#58b84e", hat = null, s
             <ellipse cx="41.5" cy="4.8" rx="3.4" ry="1.7" fill="#3e9142" transform="rotate(-28 41.5 4.8)" />
           </g>
         )}
+        {hat === "hat_crown" && (
+          <g>
+            <path d="M24 18 L24 9 L29 13 L36 6 L43 13 L48 9 L48 18 Z" fill="#ffd93d" stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <circle cx="24" cy="9" r="1.8" fill="#e85a5a" stroke={INK} strokeWidth="1.4" />
+            <circle cx="36" cy="6" r="1.8" fill="#4fb8e8" stroke={INK} strokeWidth="1.4" />
+            <circle cx="48" cy="9" r="1.8" fill="#e85a5a" stroke={INK} strokeWidth="1.4" />
+          </g>
+        )}
+        {hat === "hat_wizard" && (
+          <g>
+            <path d="M36 2 L26 18 L46 18 Z" fill="#5d4fc0" stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <ellipse cx="36" cy="18" rx="14" ry="3" fill="#5d4fc0" stroke={INK} strokeWidth="2.2" />
+            <path d="M34 8 l1 2.4 2.4 1 -2.4 1 -1 2.4 -1 -2.4 -2.4 -1 2.4 -1 Z" fill="#ffd93d" />
+            <circle cx="40" cy="14" r="1.3" fill="#ffd93d" />
+          </g>
+        )}
+        {hat === "hat_ribbon" && (
+          <g>
+            <path d="M46 12 L54 7 L54 17 Z" fill="#e86fa0" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
+            <path d="M46 12 L38 7 L38 17 Z" fill="#e86fa0" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
+            <circle cx="46" cy="12" r="3" fill="#ffa3c0" stroke={INK} strokeWidth="2" />
+          </g>
+        )}
 
         {/* face */}
         {closed ? (

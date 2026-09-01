@@ -56,6 +56,7 @@ function ShopRow({ item, state, api }: { item: ShopItem; state: GameState; api: 
 
   const countChip =
     item.id === "fertilizer" && state.fertCharges > 0 ? `đang có ×${state.fertCharges}` :
+    item.id === "charm" && state.luckyCharges > 0 ? `đang có ×${state.luckyCharges}` :
     item.id === "freeze" && state.freezes > 0 ? `đang có ×${state.freezes}` : null;
 
   let right: React.ReactNode;

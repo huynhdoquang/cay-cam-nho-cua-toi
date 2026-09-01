@@ -472,6 +472,9 @@ export class GardenEngine {
     if (this.level >= 10 && this.fruits.length > 0) this.drawFruits();
     if (this.level >= 13 || this.landmarks.has("cottage")) this.drawFireflies();
 
+    if (this.decor.pond) this.drawPond();
+    if (this.decor.scarecrow) this.drawScarecrow();
+    if (this.decor.swing) this.drawSwing();
     if (this.decor.lantern) this.drawLantern();
     this.drawChibi();
     this.drawParticles();
@@ -981,6 +984,159 @@ export class GardenEngine {
     }
   }
 
+  private drawPond() {
+    const { ctx, u } = this;
+    const x = this.W * 0.85;
+    const y = this.H * 0.9;
+    const rx = 46 * u;
+    const ry = 17 * u;
+    // mặt nước
+    const g = ctx.createLinearGradient(x, y - ry, x, y + ry);
+    g.addColorStop(0, "#7ed3f2");
+    g.addColorStop(1, "#2f9cd0");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#1e4d6b";
+    ctx.lineWidth = 2.4 * u;
+    ctx.stroke();
+    // gợn sóng
+    ctx.strokeStyle = "rgba(255,255,255,0.65)";
+    ctx.lineWidth = 1.6 * u;
+    for (let i = 0; i < 3; i++) {
+      const rr = (8 + i * 10) * u + Math.sin(this.time * 1.6 + i) * 2 * u;
+      ctx.beginPath();
+      ctx.ellipse(x - 10 * u, y, rr, rr * 0.32, 0, 0.3, Math.PI - 0.3);
+      ctx.stroke();
+    }
+    // cá koi
+    for (let i = 0; i < 2; i++) {
+      const a = this.time * (i === 0 ? 0.9 : -0.7) + i * 2.6;
+      const kx = x + Math.cos(a) * rx * 0.5;
+      const ky = y + Math.sin(a) * ry * 0.4;
+      const dir = -Math.sin(a) * (i === 0 ? 1 : -1);
+      ctx.save();
+      ctx.translate(kx, ky);
+      ctx.scale(dir >= 0 ? 1 : -1, 1);
+      ctx.fillStyle = i === 0 ? "#ff8c2e" : "#fff9ea";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 7 * u, 3.4 * u, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-6 * u, 0);
+      ctx.lineTo(-10 * u, -3 * u);
+      ctx.lineTo(-10 * u, 3 * u);
+      ctx.closePath();
+      ctx.fill();
+      if (i === 1) {
+        ctx.fillStyle = "#ff8c2e";
+        ctx.beginPath();
+        ctx.arc(2 * u, -1 * u, 2 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#2b1a0c";
+      ctx.beginPath();
+      ctx.arc(4 * u, -0.5 * u, 0.8 * u, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    // lá súng
+    ctx.fillStyle = "#4ca854";
+    ctx.beginPath();
+    ctx.ellipse(x + rx * 0.55, y - ry * 0.3, 8 * u, 4 * u, -0.3, 0.4, Math.PI * 1.9);
+    ctx.fill();
+  }
+
+  private drawScarecrow() {
+    const { ctx, u } = this;
+    const x = this.W * 0.1;
+    const y = this.H * 0.82;
+    const sway = Math.sin(this.time * 1.2) * 0.03;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(sway);
+    // cọc
+    ctx.fillStyle = "#8b5a2b";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(-3 * u, -46 * u, 6 * u, 46 * u, 2 * u);
+    ctx.fill(); ctx.stroke();
+    // tay ngang
+    ctx.beginPath();
+    ctx.roundRect(-22 * u, -38 * u, 44 * u, 5 * u, 2 * u);
+    ctx.fill(); ctx.stroke();
+    // đầu rơm
+    ctx.fillStyle = "#f2d16b";
+    ctx.beginPath();
+    ctx.arc(0, -54 * u, 10 * u, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // mũ rơm
+    ctx.fillStyle = "#e8b93d";
+    ctx.beginPath();
+    ctx.ellipse(0, -60 * u, 14 * u, 4 * u, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -64 * u, 8 * u, 5 * u, 0, Math.PI, 0);
+    ctx.fill(); ctx.stroke();
+    // mặt cười
+    ctx.fillStyle = "#5c3a1e";
+    ctx.beginPath();
+    ctx.arc(-3.5 * u, -55 * u, 1.2 * u, 0, Math.PI * 2);
+    ctx.arc(3.5 * u, -55 * u, 1.2 * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 1.6 * u;
+    ctx.beginPath();
+    ctx.arc(0, -52 * u, 3.4 * u, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    // áo
+    ctx.fillStyle = "#e85a5a";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(-11 * u, -36 * u, 22 * u, 20 * u, 4 * u);
+    ctx.fill(); ctx.stroke();
+    // rơm thừa
+    ctx.strokeStyle = "#f2d16b";
+    ctx.lineWidth = 2 * u;
+    for (const [bx, by, aa] of [[-22, -36, 2.4], [22, -36, 0.7], [-8, -16, 1.9], [8, -16, 1.2]] as [number, number, number][]) {
+      ctx.beginPath();
+      ctx.moveTo(bx * u, by * u);
+      ctx.lineTo((bx + Math.cos(aa) * 7) * u, (by + Math.sin(aa) * 7) * u);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  private drawSwing() {
+    const { ctx, u } = this;
+    const g = this.geom;
+    // treo từ cành cây bên phải
+    const ax = g.tx + g.r * 0.85;
+    const ay = g.cy + g.r * 0.1;
+    const len = 58 * u;
+    const ang = Math.sin(this.time * 1.4) * 0.22;
+    const sx = ax + Math.sin(ang) * len;
+    const sy = ay + Math.cos(ang) * len;
+    ctx.strokeStyle = "#7a4a21";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.moveTo(ax - 7 * u, ay);
+    ctx.lineTo(sx - 7 * u, sy);
+    ctx.moveTo(ax + 7 * u, ay);
+    ctx.lineTo(sx + 7 * u, sy);
+    ctx.stroke();
+    // ghế
+    ctx.fillStyle = "#c68d52";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(sx - 13 * u, sy, 26 * u, 6 * u, 3 * u);
+    ctx.fill(); ctx.stroke();
+  }
+
   private drawChibi() {
     const { ctx, u } = this;
     const g = this.geom;
@@ -1113,6 +1269,56 @@ export class GardenEngine {
       ctx.beginPath();
       ctx.ellipse(x + 5 * u, headY - 23 * u, 4 * u, 2 * u, -0.6, 0, Math.PI * 2);
       ctx.fill();
+    } else if (this.skin.hat === "hat_crown") {
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.moveTo(x - 12 * u, headY - 6 * u);
+      ctx.lineTo(x - 12 * u, headY - 16 * u);
+      ctx.lineTo(x - 6 * u, headY - 11 * u);
+      ctx.lineTo(x, headY - 19 * u);
+      ctx.lineTo(x + 6 * u, headY - 11 * u);
+      ctx.lineTo(x + 12 * u, headY - 16 * u);
+      ctx.lineTo(x + 12 * u, headY - 6 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#e85a5a";
+      ctx.beginPath();
+      ctx.arc(x, headY - 10 * u, 1.8 * u, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (this.skin.hat === "hat_wizard") {
+      ctx.fillStyle = "#5d4fc0";
+      ctx.beginPath();
+      ctx.moveTo(x, headY - 32 * u);
+      ctx.lineTo(x - 12 * u, headY - 8 * u);
+      ctx.lineTo(x + 12 * u, headY - 8 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(x, headY - 8 * u, 16 * u, 3.4 * u, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.arc(x - 2 * u, headY - 18 * u, 1.6 * u, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (this.skin.hat === "hat_ribbon") {
+      ctx.fillStyle = "#e86fa0";
+      const rx = x + 10 * u, ry = headY - 12 * u;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 8 * u, ry - 5 * u);
+      ctx.lineTo(rx - 8 * u, ry + 5 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx + 8 * u, ry - 5 * u);
+      ctx.lineTo(rx + 8 * u, ry + 5 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffa3c0";
+      ctx.beginPath();
+      ctx.arc(rx, ry, 3 * u, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
     }
 
     const blink = this.blinkT > 3.2 && this.blinkT < 3.35 && mode !== "sleep";

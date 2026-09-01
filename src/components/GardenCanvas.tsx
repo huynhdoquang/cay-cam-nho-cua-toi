@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { GardenEngine } from "../game/engine";
-import { colorOf, DECOR_FLAGS, HAIR_COLORS, SHIRT_COLORS, TREE } from "../game/data";
+import { colorOf, CYCLE_BLOOM_DAYS, CYCLE_RIPE_AT, DECOR_FLAGS, FIRST_HARVEST_FRUITS, FRUIT_REGROWTH_COUNT, HAIR_COLORS, SHIRT_COLORS, TREE } from "../game/data";
 import type { GameState } from "../game/types";
 
 interface Props {
   state: GameState;
   engineRef: MutableRefObject<GardenEngine | null>;
-  onFruitPick: (x: number, y: number) => void;
+  onFruitPick: (index: number, x: number, y: number) => void;
 }
 
 export function GardenCanvas({ state, engineRef, onFruitPick }: Props) {
@@ -21,7 +21,7 @@ export function GardenCanvas({ state, engineRef, onFruitPick }: Props) {
     if (!canvas) return;
     const engine = new GardenEngine(canvas);
     engineRef.current = engine;
-    engine.onFruitPick = (x, y) => fruitCb.current(x, y);
+    engine.onFruitPick = (index, x, y) => fruitCb.current(index, x, y);
     engine.setTree(TREE);
     engine.start();
 
@@ -60,10 +60,25 @@ export function GardenCanvas({ state, engineRef, onFruitPick }: Props) {
       lantern: state.owned.includes(DECOR_FLAGS[1]),
       mushrooms: state.owned.includes(DECOR_FLAGS[2]),
       flowers: state.owned.includes(DECOR_FLAGS[3]),
+      pond: state.owned.includes(DECOR_FLAGS[4]),
+      scarecrow: state.owned.includes(DECOR_FLAGS[5]),
+      swing: state.owned.includes(DECOR_FLAGS[6]),
     });
-    if (state.level >= 10 && state.fruitsLeft > 0 && e.unpickedCount() !== state.fruitsLeft) {
-      e.syncFruits(state.fruitsLeft, state.harvests === 0 ? 8 : 5);
+    if (state.level >= 10 && state.fruitsLeft > 0) {
+      const count = state.harvests === 0 ? FIRST_HARVEST_FRUITS : FRUIT_REGROWTH_COUNT;
+      if (e.unpickedCount() !== state.fruitsLeft) {
+        e.setFruitManifest(state.fruitManifest.length === count ? state.fruitManifest : [], state.fruitsLeft);
+        if (state.fruitManifest.length !== count) e.syncFruits(state.fruitsLeft, count);
+      }
     }
+    // pha nở hoa / quả xanh của chu kỳ sau thu hoạch
+    const inBloom =
+      state.level >= 10 && state.inCycle && state.harvestPhase === "none" && state.fruitsLeft === 0 &&
+      state.cycleDay >= 1 && state.cycleDay <= CYCLE_BLOOM_DAYS;
+    const inGreen =
+      state.level >= 10 && state.inCycle && state.harvestPhase === "none" && state.fruitsLeft === 0 &&
+      state.cycleDay > CYCLE_BLOOM_DAYS && state.cycleDay < CYCLE_RIPE_AT;
+    e.setCyclePhase(inBloom ? "bloom" : inGreen ? "green" : "none");
     e.setFog(state.fog);
     e.setDiscovered(state.discovered.map((d) => d.id));
   });

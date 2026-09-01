@@ -9,6 +9,7 @@ import { HUD } from "./components/HUD";
 import { TaskPanel } from "./components/TaskPanel";
 import { ShopPanel } from "./components/ShopPanel";
 import { TreePanel } from "./components/TreePanel";
+import { TestPanel } from "./components/TestPanel";
 import { HarvestModal, HelpModal, StartScreen, StoryModal, Toasts } from "./components/Modals";
 import { Icon } from "./components/icons";
 
@@ -134,6 +135,9 @@ export default function App() {
           Đi ngủ thôi
         </button>
       )}
+
+      {/* chế độ test (phím T) */}
+      {state.started && <TestPanel api={api} toast={toast} />}
 
       {!state.started && <StartScreen hasSave={state.hasSave} day={saveDay} onStart={api.start} />}
       {state.started && state.harvestPhase === "done" && <HarvestModal state={state} api={api} />}
