@@ -28,8 +28,9 @@ export interface GameApi {
   endDay: () => void;
   buy: (itemId: string) => void;
   equip: (slot: "hair" | "shirt" | "hat", id: string) => void;
-  addCustom: (d: { name: string; pose: PoseId; kind: TaskKind; target: number; unit: string; step: number }) => boolean;
+  addCustom: (d: { name: string; pose: PoseId; kind: TaskKind; target: number; unit: string; step: number; repeat?: number[]; tplId?: string }) => boolean;
   removeCustom: (id: string) => void;
+  setReminder: (enabled: boolean, time: string) => void;
   onFruitPick: (index: number, x: number, y: number) => void;
   closeHarvest: () => void;
   dismissStory: () => void;
@@ -76,6 +77,8 @@ function freshState(): GameState {
     fruitManifest: [],
     cycleDay: 0,
     inCycle: false,
+    reminder: { enabled: false, time: "20:00" },
+    history: [],
     tasks: buildDailyTasks(1, []),
     customs: [],
     owned: [],
@@ -408,27 +411,33 @@ export function useGame({
         return false;
       }
       const id = `custom-${Date.now()}`;
-      const customs = [...s.customs, { id, ...d, name, xp: d.kind === "binary" ? 12 : 16 }];
-      setState({
-        ...s,
-        customs,
-        tasks: [...s.tasks, {
-          uid: `c-${s.day}-${id}`,
-          defId: null,
-          custom: true,
-          name,
-          pose: d.pose,
-          kind: d.kind,
-          target: d.kind === "binary" ? 1 : d.target,
-          unit: d.kind === "binary" ? "" : d.unit,
-          step: d.kind === "binary" ? 1 : d.step,
-          xp: d.kind === "binary" ? 12 : 16,
-          progress: 0,
-          done: false,
-        }],
-      });
+      const repeat = d.repeat && d.repeat.length > 0 ? d.repeat : undefined;
+      const customs = [...s.customs, { id, ...d, name, repeat, tplId: d.tplId, xp: d.kind === "binary" ? 12 : 16 }];
+      // hôm nay có nằm trong lịch lặp? (index T2..CN = (jsDay+6)%7)
+      const t2cn = (new Date().getDay() + 6) % 7;
+      const showToday = !repeat || repeat.includes(t2cn);
+      const tasks = showToday
+        ? [...s.tasks, {
+            uid: `c-${s.day}-${id}`,
+            defId: null,
+            custom: true,
+            name,
+            pose: d.pose,
+            kind: d.kind,
+            target: d.kind === "binary" ? 1 : d.target,
+            unit: d.kind === "binary" ? "" : d.unit,
+            step: d.kind === "binary" ? 1 : d.step,
+            xp: d.kind === "binary" ? 12 : 16,
+            progress: 0,
+            done: false,
+          }]
+        : s.tasks;
+      setState({ ...s, customs, tasks });
       sfx.check();
-      fx.toast(`Đã thêm “${name}” — một bong bóng mới xuất hiện!`, "success");
+      fx.toast(
+        showToday ? `Đã thêm “${name}” — một bong bóng mới xuất hiện!` : `Đã thêm “${name}” — sẽ xuất hiện vào ngày lặp của nó!`,
+        "success"
+      );
       return true;
     },
 

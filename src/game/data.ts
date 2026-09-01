@@ -204,9 +204,11 @@ export function buildDailyTasks(day: number, customs: CustomDef[], weekdayJs?: n
     const d = PRESETS[(start + off) % PRESETS.length];
     return inst(d, `${day}-${i}`, false);
   });
+  // repeat lưu theo index 0..6 = T2..CN; JS getDay: 0=CN..6=T7 → quy đổi (jsDay+6)%7
   const jsDay = weekdayJs ?? new Date().getDay();
+  const t2cn = (jsDay + 6) % 7;
   customs
-    .filter((c) => !c.repeat || c.repeat.length === 0 || c.repeat.includes(jsDay))
+    .filter((c) => !c.repeat || c.repeat.length === 0 || c.repeat.includes(t2cn))
     .forEach((c, i) => {
       list.push(inst(c, `c-${day}-${i}-${c.id}`, true));
     });

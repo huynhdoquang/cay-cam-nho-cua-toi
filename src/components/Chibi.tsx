@@ -34,12 +34,12 @@ export function Chibi({ pose, hair = "#7a4a21", shirt = "#58b84e", hat = null, s
     <svg width={size} height={size} viewBox="0 0 72 72" className={`${className} chibi`} aria-hidden>
       <g className={animated ? ANIM[pose] : undefined}>
         {/* legs */}
-        {pose === "meditate" ? (
+        {sitting ? (
           <ellipse cx="36" cy="62" rx="11" ry="4.5" fill="#4a6ba8" stroke={INK} strokeWidth="2" />
         ) : (
           <>
-            <rect x="29" y="56" width="6" height="10" rx="3" fill="#4a6ba8" stroke={INK} strokeWidth="2" className={pose === "walk" ? "leg-l" : undefined} />
-            <rect x="37.5" y="56" width="6" height="10" rx="3" fill="#4a6ba8" stroke={INK} strokeWidth="2" className={pose === "walk" ? "leg-r" : undefined} />
+            <rect x="29" y="56" width="6" height="10" rx="3" fill="#4a6ba8" stroke={INK} strokeWidth="2" className={["walk", "dance"].includes(pose) ? "leg-l" : undefined} />
+            <rect x="37.5" y="56" width="6" height="10" rx="3" fill="#4a6ba8" stroke={INK} strokeWidth="2" className={["walk", "dance"].includes(pose) ? "leg-r" : undefined} />
           </>
         )}
 
@@ -142,7 +142,7 @@ export function Chibi({ pose, hair = "#7a4a21", shirt = "#58b84e", hat = null, s
 }
 
 function Arms({ pose }: { pose: PoseId }) {
-  if (["stretch", "exercise", "call", "drink"].includes(pose)) {
+  if (["stretch", "exercise", "call", "drink", "dance", "yoga"].includes(pose)) {
     return (
       <g stroke={INK} strokeWidth="2.2" strokeLinecap="round">
         {pose === "call" ? (
@@ -300,6 +300,124 @@ function Props({ pose }: { pose: PoseId }) {
         <g>
           <g className="sparkle-f" fill="#ffd93d"><path d="M20 12 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1 -2.7 -2.7 -1.1 2.7 -1.1 Z" /></g>
           <g className="sparkle-f" style={{ animationDelay: "0.6s" }} fill="#ffd93d"><path d="M52 10 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1 -2.7 -2.7 -1.1 2.7 -1.1 Z" /></g>
+        </g>
+      );
+    case "yoga":
+      return (
+        <g>
+          <circle cx="36" cy="26" r="21" fill="none" stroke="#ffd93d" strokeWidth="1.6" opacity="0.55" className="pulse-soft" />
+          <g className="sparkle-f" fill="#9c8ce8"><path d="M15 20 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1 -2.7 -2.7 -1.1 2.7 -1.1 Z" /></g>
+          <g className="sparkle-f" style={{ animationDelay: "0.7s" }} fill="#9c8ce8"><path d="M57 16 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1 -2.7 -2.7 -1.1 2.7 -1.1 Z" /></g>
+        </g>
+      );
+    case "dance":
+      return (
+        <g>
+          <g className="note-float" fill="#e85a71">
+            <circle cx="55" cy="22" r="2.3" />
+            <path d="M57.2 22 V12.5 l4.5 -1.4 V18.5" stroke="#e85a71" strokeWidth="1.7" fill="none" />
+            <circle cx="60.2" cy="19.5" r="1.9" />
+          </g>
+          <g className="note-float" style={{ animationDelay: "0.8s" }} fill="#4fb8e8">
+            <circle cx="13" cy="27" r="2.1" />
+            <path d="M15 27 V18" stroke="#4fb8e8" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+            <path d="M15 18 q2.8 0 3.8 2.3" stroke="#4fb8e8" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+          </g>
+          <g className="sparkle-f" style={{ animationDelay: "0.4s" }} fill="#ffd93d"><path d="M52 40 l1 2.4 2.4 1 -2.4 1 -1 2.4 -1 -2.4 -2.4 -1 2.4 -1 Z" /></g>
+        </g>
+      );
+    case "cook":
+      return (
+        <g>
+          <g className="tilt-drink">
+            <ellipse cx="52" cy="47" rx="9" ry="4" fill="#8fa3b8" stroke={INK} strokeWidth="1.8" />
+            <line x1="60" y1="46" x2="68" y2="43" stroke={INK} strokeWidth="2.4" strokeLinecap="round" />
+            <circle cx="50" cy="46.4" r="2.7" fill="#fff3dc" stroke={INK} strokeWidth="1.3" />
+            <circle cx="50" cy="46.4" r="1.2" fill="#f2b33d" />
+          </g>
+          <path className="steam" d="M48 41 q-1.5 -2.5 0 -5" stroke="#d9d9d9" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+          <path className="steam" style={{ animationDelay: "0.6s" }} d="M55 40 q1.5 -2.5 0 -5" stroke="#d9d9d9" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+        </g>
+      );
+    case "draw":
+      return (
+        <g>
+          <rect x="45" y="36" width="15" height="13" rx="1.5" fill="#fff9ea" stroke={INK} strokeWidth="1.8" />
+          <path d="M48 41 l3 3 4.5 -5.5" stroke="#e85a5a" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="23" cy="47" r="4.5" fill="#fff3dc" stroke={INK} strokeWidth="1.8" />
+          <circle cx="21.5" cy="46" r="1" fill="#e85a5a" />
+          <circle cx="24.5" cy="46" r="1" fill="#4fb8e8" />
+          <circle cx="23" cy="48.8" r="1" fill="#f2b33d" />
+        </g>
+      );
+    case "brush":
+      return (
+        <g>
+          <g transform="rotate(20 50 40)">
+            <rect x="48.5" y="30" width="3.4" height="13" rx="1.5" fill="#4fb8e8" stroke={INK} strokeWidth="1.5" />
+            <rect x="47.5" y="27" width="5.4" height="4" rx="1.2" fill="#fff9ea" stroke={INK} strokeWidth="1.4" />
+          </g>
+          <g className="steam" fill="#d9f0fa" stroke="#9fd4ec" strokeWidth="1">
+            <circle cx="42" cy="36" r="2.2" />
+            <circle cx="46" cy="33.5" r="1.7" />
+            <circle cx="40" cy="32.5" r="1.4" />
+          </g>
+        </g>
+      );
+    case "pill":
+      return (
+        <g>
+          <g transform="rotate(-25 52 42)">
+            <rect x="45" y="39" width="14" height="6.5" rx="3.25" fill="#fff9ea" stroke={INK} strokeWidth="1.7" />
+            <rect x="52" y="39" width="7" height="6.5" rx="3.25" fill="#e85a71" stroke={INK} strokeWidth="1.7" />
+          </g>
+          <rect x="20" y="42" width="8" height="11" rx="2" fill="#7ed3f2" stroke={INK} strokeWidth="1.8" />
+          <path d="M22 45.5 h4" stroke="#b5e8f8" strokeWidth="1.6" strokeLinecap="round" />
+        </g>
+      );
+    case "save":
+      return (
+        <g>
+          <g className="pulse-soft">
+            <ellipse cx="52" cy="47" rx="9" ry="7" fill="#ffa3c0" stroke={INK} strokeWidth="1.8" />
+            <circle cx="56.5" cy="45" r="1.2" fill={INK} />
+            <ellipse cx="59.5" cy="47.5" rx="2.4" ry="2" fill="#e86fa0" stroke={INK} strokeWidth="1.4" />
+            <rect x="48" y="40.5" width="6" height="1.8" rx="0.9" fill={INK} />
+            <path d="M46 54 l-1.5 3 M58 54 l1.5 3" stroke={INK} strokeWidth="2" strokeLinecap="round" />
+          </g>
+          <g className="note-float" fill="#ffd93d" stroke="#e8a91a" strokeWidth="1.2">
+            <circle cx="46" cy="34" r="3.4" />
+            <path d="M46 32.5 v3 M44.8 34 h2.4" stroke="#e8a91a" strokeWidth="1.1" strokeLinecap="round" />
+          </g>
+        </g>
+      );
+    case "pet":
+      return (
+        <g>
+          <g>
+            <circle cx="53" cy="50" r="7" fill="#f2b33d" stroke={INK} strokeWidth="1.8" />
+            <path d="M47.5 45 l-1.5 -5 4.5 2.5 Z" fill="#f2b33d" stroke={INK} strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M58.5 45 l1.5 -5 -4.5 2.5 Z" fill="#f2b33d" stroke={INK} strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="50.5" cy="49" r="1" fill={INK} />
+            <circle cx="55.5" cy="49" r="1" fill={INK} />
+            <path d="M52 52 q1 1.2 2 0" stroke={INK} strokeWidth="1.3" fill="none" strokeLinecap="round" />
+            <path d="M60 52 q4 -1 4.5 -5" stroke="#f2b33d" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+          </g>
+          <g className="note-float" fill="#e85a71">
+            <path d="M44 36 c-2 -2.5 -5 -0.5 -3.2 2 L44 40.5 L47.2 38 C49 35.5 46 33.5 44 36 Z" />
+          </g>
+        </g>
+      );
+    case "phone":
+      return (
+        <g>
+          <rect x="46" y="36" width="11" height="17" rx="2.5" fill="#5d4fc0" stroke={INK} strokeWidth="1.8" />
+          <path d="M49 40 h5" stroke="#c0b5f2" strokeWidth="1.5" strokeLinecap="round" />
+          <g stroke="#e85a5a" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M43 33 L60 56" />
+            <path d="M60 33 L43 56" />
+          </g>
+          <g className="sparkle-f" fill="#7acb5f"><path d="M16 30 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1 -2.7 -2.7 -1.1 2.7 -1.1 Z" /></g>
         </g>
       );
     default:
