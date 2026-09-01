@@ -1,6 +1,7 @@
 export type PoseId =
   | "sleep" | "read" | "drink" | "exercise" | "meditate" | "eat" | "clean"
-  | "walk" | "study" | "music" | "plant" | "write" | "call" | "stretch";
+  | "walk" | "study" | "music" | "plant" | "write" | "call" | "stretch"
+  | "yoga" | "dance" | "cook" | "draw" | "brush" | "pill" | "save" | "pet" | "phone";
 
 export type TaskKind = "binary" | "quant";
 
@@ -45,6 +46,8 @@ export interface CustomDef {
   unit: string;
   step: number;
   xp: number;
+  tplId?: string; // nếu thêm từ mẫu nhanh
+  repeat?: number[]; // ngày trong tuần lặp lại (JS getDay: 0=CN); rỗng = mỗi ngày
 }
 
 export interface ShopItem {
@@ -81,6 +84,8 @@ export interface GameState {
   fruitManifest: FruitType[]; // loại của từng quả trong lứa hiện tại
   cycleDay: number; // ngày trong chu kỳ ra quả sau thu hoạch (0 = chưa bắt đầu)
   inCycle: boolean; // đang trong chu kỳ nở hoa → quả xanh → quả chín
+  reminder: { enabled: boolean; time: string }; // nhắc nhở hàng ngày (HH:MM)
+  history: { day: number; done: number; total: number }[]; // nhật ký hoàn thành (tối đa 30)
   tasks: TaskInst[];
   customs: CustomDef[];
   owned: string[];

@@ -1,4 +1,4 @@
-import type { CustomDef, FruitType, PoseId, ShopItem, TaskDef, TaskInst } from "./types";
+import type { CustomDef, FruitType, PoseId, ShopItem, TaskDef, TaskInst, TaskKind } from "./types";
 
 export const DAILY_XP_CAP = 120;
 export const PITY_LIMIT = 6; // guaranteed drop after N dry waters
@@ -119,7 +119,63 @@ export const POSES: { id: PoseId; label: string }[] = [
   { id: "write", label: "Viết lách" },
   { id: "call", label: "Gọi điện" },
   { id: "stretch", label: "Vươn vai" },
+  { id: "yoga", label: "Yoga" },
+  { id: "dance", label: "Nhảy nhót" },
+  { id: "cook", label: "Nấu ăn" },
+  { id: "draw", label: "Vẽ vời" },
+  { id: "brush", label: "Đánh răng" },
+  { id: "pill", label: "Uống thuốc" },
+  { id: "save", label: "Tiết kiệm" },
+  { id: "pet", label: "Chơi với pet" },
+  { id: "phone", label: "Cai điện thoại" },
 ];
+
+/* ---------- mẫu nhiệm vụ nhanh ---------- */
+
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  pose: PoseId;
+  kind: TaskKind;
+  target: number;
+  unit: string;
+  step: number;
+  cat: string;
+}
+
+export const TASK_TEMPLATES: TaskTemplate[] = [
+  // Sức khoẻ
+  { id: "tpl_water", name: "Uống đủ nước", pose: "drink", kind: "quant", target: 8, unit: "cốc", step: 2, cat: "Sức khoẻ" },
+  { id: "tpl_sleep", name: "Ngủ trước 23h", pose: "sleep", kind: "binary", target: 1, unit: "", step: 1, cat: "Sức khoẻ" },
+  { id: "tpl_gym", name: "Tập thể dục", pose: "exercise", kind: "quant", target: 15, unit: "phút", step: 5, cat: "Sức khoẻ" },
+  { id: "tpl_walk", name: "Đi bộ", pose: "walk", kind: "quant", target: 5000, unit: "bước", step: 1000, cat: "Sức khoẻ" },
+  { id: "tpl_yoga", name: "Tập yoga", pose: "yoga", kind: "quant", target: 10, unit: "phút", step: 5, cat: "Sức khoẻ" },
+  { id: "tpl_vitamin", name: "Uống vitamin", pose: "pill", kind: "binary", target: 1, unit: "", step: 1, cat: "Sức khoẻ" },
+  { id: "tpl_brush", name: "Đánh răng sáng & tối", pose: "brush", kind: "quant", target: 2, unit: "lần", step: 1, cat: "Sức khoẻ" },
+  // Học tập
+  { id: "tpl_read", name: "Đọc sách", pose: "read", kind: "quant", target: 10, unit: "trang", step: 2, cat: "Học tập" },
+  { id: "tpl_focus", name: "Học tập trung", pose: "study", kind: "quant", target: 25, unit: "phút", step: 5, cat: "Học tập" },
+  { id: "tpl_vocab", name: "Học từ vựng", pose: "study", kind: "quant", target: 10, unit: "từ", step: 5, cat: "Học tập" },
+  { id: "tpl_draw", name: "Vẽ / phác thảo", pose: "draw", kind: "quant", target: 15, unit: "phút", step: 5, cat: "Học tập" },
+  // Nhà cửa
+  { id: "tpl_tidy", name: "Dọn bàn làm việc", pose: "clean", kind: "binary", target: 1, unit: "", step: 1, cat: "Nhà cửa" },
+  { id: "tpl_cook", name: "Nấu ăn ở nhà", pose: "cook", kind: "binary", target: 1, unit: "", step: 1, cat: "Nhà cửa" },
+  { id: "tpl_plants", name: "Tưới cây trong nhà", pose: "plant", kind: "binary", target: 1, unit: "", step: 1, cat: "Nhà cửa" },
+  // Tinh thần
+  { id: "tpl_zen", name: "Thiền tĩnh tâm", pose: "meditate", kind: "binary", target: 1, unit: "", step: 1, cat: "Tinh thần" },
+  { id: "tpl_journal", name: "Viết nhật ký", pose: "write", kind: "quant", target: 3, unit: "dòng", step: 1, cat: "Tinh thần" },
+  { id: "tpl_call", name: "Gọi cho người thân", pose: "call", kind: "binary", target: 1, unit: "", step: 1, cat: "Tinh thần" },
+  { id: "tpl_detox", name: "Không MXH 1 giờ", pose: "phone", kind: "binary", target: 1, unit: "", step: 1, cat: "Tinh thần" },
+  { id: "tpl_dance", name: "Nhảy theo nhạc", pose: "dance", kind: "quant", target: 10, unit: "phút", step: 5, cat: "Tinh thần" },
+  { id: "tpl_pet", name: "Chơi với thú cưng", pose: "pet", kind: "binary", target: 1, unit: "", step: 1, cat: "Tinh thần" },
+  // Tiền bạc
+  { id: "tpl_save", name: "Ghi chép chi tiêu", pose: "save", kind: "binary", target: 1, unit: "", step: 1, cat: "Tiền bạc" },
+];
+
+export const TEMPLATE_CATS = ["Sức khoẻ", "Học tập", "Nhà cửa", "Tinh thần", "Tiền bạc"];
+
+/** Nhãn thứ trong tuần, index 0..6 = T2..CN (JS getDay: (i+1)%7). */
+export const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 export const PRESETS: TaskDef[] = [
   { id: "sleep23", name: "Ngủ trước 23h", pose: "sleep", kind: "binary", target: 1, unit: "", step: 1, xp: 12 },
@@ -142,15 +198,18 @@ export const PRESETS: TaskDef[] = [
 
 const ROTATION = [0, 5, 10, 15, 4, 9]; // coprime offsets mod 16 → always 6 distinct presets
 
-export function buildDailyTasks(day: number, customs: CustomDef[]): TaskInst[] {
+export function buildDailyTasks(day: number, customs: CustomDef[], weekdayJs?: number): TaskInst[] {
   const start = (day * 3) % PRESETS.length;
   const list: TaskInst[] = ROTATION.map((off, i) => {
     const d = PRESETS[(start + off) % PRESETS.length];
     return inst(d, `${day}-${i}`, false);
   });
-  customs.forEach((c, i) => {
-    list.push(inst(c, `c-${day}-${i}-${c.id}`, true));
-  });
+  const jsDay = weekdayJs ?? new Date().getDay();
+  customs
+    .filter((c) => !c.repeat || c.repeat.length === 0 || c.repeat.includes(jsDay))
+    .forEach((c, i) => {
+      list.push(inst(c, `c-${day}-${i}-${c.id}`, true));
+    });
   return list;
 }
 

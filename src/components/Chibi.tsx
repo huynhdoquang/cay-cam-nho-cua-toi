@@ -18,13 +18,17 @@ const ANIM: Record<PoseId, string> = {
   meditate: "anim-sway", eat: "anim-bob", clean: "anim-wiggle", walk: "anim-bob",
   study: "anim-bob", music: "anim-sway", plant: "anim-bob", write: "anim-sway",
   call: "anim-bob", stretch: "anim-hop",
+  yoga: "anim-sway", dance: "anim-hop", cook: "anim-bob", draw: "anim-sway",
+  brush: "anim-wiggle", pill: "anim-bob", save: "anim-bob", pet: "anim-bob",
+  phone: "anim-sway",
 };
 
 /** Bé Cam — chibi mascot, fully parametric SVG (no image assets). */
 export function Chibi({ pose, hair = "#7a4a21", shirt = "#58b84e", hat = null, size = 56, className = "", animated = true }: ChibiProps) {
-  const happy = ["drink", "exercise", "meditate", "eat", "music", "plant", "call", "stretch"].includes(pose);
+  const happy = ["drink", "exercise", "meditate", "eat", "music", "plant", "call", "stretch", "yoga", "dance", "cook", "brush", "save", "pet", "phone"].includes(pose);
   const closed = pose === "sleep";
-  const lookDown = ["read", "study", "write"].includes(pose);
+  const lookDown = ["read", "study", "write", "draw"].includes(pose);
+  const sitting = pose === "meditate" || pose === "yoga";
 
   return (
     <svg width={size} height={size} viewBox="0 0 72 72" className={`${className} chibi`} aria-hidden>
