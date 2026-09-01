@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
-import type { GameState, PoseId, TaskKind } from "./types";
+import type { FruitType, GameState, PoseId, TaskKind } from "./types";
 import {
-  ABSENCE_DROP_DAYS, BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, DAILY_XP_CAP, DECOR_FLAGS, FERT_BONUS,
-  FIRST_HARVEST_FRUITS, FIRST_HARVEST_LEVEL, FOG_FIRST_HARVEST, FOG_REGROWTH_HARVEST, FOG_START,
-  FRUIT_REGROWTH_COUNT, FRUIT_REGROWTH_DAYS, HAIR_COLORS, LANDMARKS, PITY_LIMIT, randInt, SHOP,
-  SHIRT_COLORS, STREAK_BONUS_RATE, TREE, buildDailyTasks, colorOf, levelFromXp,
+  ABSENCE_DROP_DAYS, BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, CYCLE_BLOOM_DAYS, CYCLE_RIPE_AT,
+  DAILY_XP_CAP, DECOR_FLAGS, FERT_BONUS, FERT_CHARGES, FIRST_HARVEST_FRUITS, FIRST_HARVEST_LEVEL,
+  FOG_FIRST_HARVEST, FOG_REGROWTH_HARVEST, FOG_START, FRUIT_REGROWTH_COUNT, GIANT_MULT,
+  HAIR_COLORS, LANDMARKS, PITY_LIMIT, SHOP, SHIRT_COLORS, STREAK_BONUS_RATE, TREE,
+  buildDailyTasks, colorOf, generateFruitManifest, levelFromXp, randInt, rollGift, xpForLevel,
 } from "./data";
 
 function todayStr(): string {
@@ -29,11 +30,24 @@ export interface GameApi {
   equip: (slot: "hair" | "shirt" | "hat", id: string) => void;
   addCustom: (d: { name: string; pose: PoseId; kind: TaskKind; target: number; unit: string; step: number }) => boolean;
   removeCustom: (id: string) => void;
-  onFruitPick: (x: number, y: number) => void;
+  onFruitPick: (index: number, x: number, y: number) => void;
   closeHarvest: () => void;
   dismissStory: () => void;
   clearNotice: () => void;
   toggleMute: () => void;
+  /** Các công cụ dành riêng cho việc test / cân bằng game. */
+  test: {
+    addBerries: (n: number) => void;
+    addXp: (n: number) => void;
+    setLevel: (lv: number) => void;
+    completeAll: () => void;
+    nextDay: () => void;
+    spawnFruits: () => void;
+    forceHarvest: () => void;
+    clearFog: () => void;
+    unlockAll: () => void;
+    reset: () => void;
+  };
 }
 
 const KEY = "cay-cam-nho-v1";
@@ -59,6 +73,9 @@ function freshState(): GameState {
     fruitsLeft: 0,
     harvestPhase: "none",
     lastHarvestGain: 0,
+    fruitManifest: [],
+    cycleDay: 0,
+    inCycle: false,
     tasks: buildDailyTasks(1, []),
     customs: [],
     owned: [],
@@ -67,6 +84,7 @@ function freshState(): GameState {
     hat: null,
     fertCharges: 0,
     freezes: 0,
+    luckyCharges: 0,
     pity: 0,
     wilted: false,
     muted: false,
@@ -79,6 +97,72 @@ export function skinColors(s: GameState): { hair: string; shirt: string; hat: st
     shirt: colorOf(SHIRT_COLORS, s.shirt, "#58b84e"),
     hat: s.hat,
   };
+}
+
+/** Pha hiển thị của chu kỳ ra quả (chỉ bloom/green — quả chín vẽ riêng). */
+export function cyclePhaseOf(inCycle: boolean, cycleDay: number): "none" | "bloom" | "green" {
+  if (!inCycle || cycleDay < 1) return "none";
+  if (cycleDay <= CYCLE_BLOOM_DAYS) return "bloom";
+  if (cycleDay < CYCLE_RIPE_AT) return "green";
+  return "none";
+}
+
+/** Mở hộp quà bí ẩn: sửa trực tiếp `s`, trả về phần thưởng để hiển thị. */
+function applyGift(s: GameState, x: number, y: number): { gain: number; label: string } {
+  const g = rollGift();
+  switch (g.kind) {
+    case "berries": {
+      const n = randInt(g.min ?? 10, g.max ?? 30);
+      s.berries += n;
+      s.totalBerries += n;
+      engGlobal()?.spawnBerryBurst({ amount: n, crit: false });
+      return { gain: n, label: `Quà: +${n} berry!` };
+    }
+    case "xp": {
+      const n = g.amount ?? 30;
+      gainXp(s, n);
+      return { gain: 0, label: `Quà: +${n} KN!` };
+    }
+    case "fert": {
+      s.fertCharges += FERT_CHARGES;
+      return { gain: 0, label: "Quà: Phân bón thần kỳ!" };
+    }
+    case "freeze": {
+      s.freezes += 1;
+      return { gain: 0, label: "Quà: Băng bảo vệ!" };
+    }
+    case "cosmetic": {
+      const unowned = SHOP.filter((i) => i.kind === "skin" && i.slot && !s.owned.includes(i.id));
+      if (unowned.length === 0) {
+        s.berries += 20;
+        s.totalBerries += 20;
+        return { gain: 20, label: "Quà: +20 berry!" };
+      }
+      const pick = unowned[Math.floor(Math.random() * unowned.length)];
+      s.owned = [...s.owned, pick.id];
+      engGlobal()?.sparkAt(x, y, "#9c8ce8");
+      return { gain: 0, label: `Quà: ${pick.name}!` };
+    }
+    default: {
+      s.berries += 5;
+      s.totalBerries += 5;
+      return { gain: 5, label: "Bé Sương ôm bạn +5 berry" };
+    }
+  }
+}
+
+/** Cộng KN thuần (quà bí ẩn / test), tự tính cấp và hiệu ứng. */
+function gainXp(s: GameState, amount: number) {
+  const prevLevel = s.level;
+  s.xp += amount;
+  s.level = levelFromXp(s.xp);
+  if (s.level > prevLevel) {
+    setTimeout(() => {
+      engGlobal()?.levelUpFx();
+      sfx.levelup();
+    }, 300);
+    bridge.toast?.(`Cây cam lên cấp ${s.level}!`, "level");
+  }
 }
 
 export function useGame({
@@ -201,21 +285,35 @@ export function useGame({
         wilted = true;
       }
       const day = s.day + 1;
-      // cây vẫn lớn tiếp: quả mọc lại định kỳ sau lần thu hoạch đầu
+      // chu kỳ ra quả sau thu hoạch: nở hoa → quả xanh → quả chín
       let fruitsLeft = s.fruitsLeft;
       let harvestPhase = s.harvestPhase;
-      if (
-        s.level >= FIRST_HARVEST_LEVEL &&
-        harvestPhase === "none" &&
-        fruitsLeft === 0 &&
-        day % FRUIT_REGROWTH_DAYS === 0
-      ) {
-        fruitsLeft = FRUIT_REGROWTH_COUNT;
-        harvestPhase = "picking";
-        fx.toast(`Cây cam ra ${FRUIT_REGROWTH_COUNT} quả mới — ra hái thôi!`, "berry");
-        setTimeout(() => eng()?.ripeFx(), 300);
-        setTimeout(() => sfx.ripe(), 300);
+      let fruitManifest = s.fruitManifest;
+      let cycleDay = s.cycleDay;
+      const inCycle = s.inCycle;
+
+      if (inCycle) {
+        cycleDay += 1;
+        if (cycleDay === 1) {
+          fx.toast("Cây cam đang nở hoa trắng muốt…", "info");
+        } else if (cycleDay === CYCLE_BLOOM_DAYS + 1) {
+          fx.toast("Hoa đã đậu thành những quả cam non xanh mướt!", "info");
+        }
+        if (
+          cycleDay >= CYCLE_RIPE_AT &&
+          harvestPhase === "none" &&
+          fruitsLeft === 0 &&
+          s.level >= FIRST_HARVEST_LEVEL
+        ) {
+          fruitManifest = generateFruitManifest(FRUIT_REGROWTH_COUNT);
+          fruitsLeft = FRUIT_REGROWTH_COUNT;
+          harvestPhase = "picking";
+          fx.toast(`Cây cam chín ${FRUIT_REGROWTH_COUNT} quả mới — ra hái thôi!`, "berry");
+          setTimeout(() => eng()?.ripeFx(), 300);
+          setTimeout(() => sfx.ripe(), 300);
+        }
       }
+
       const bonus = doneAll ? 5 + Math.min(20, streak) : 0;
       const next: GameState = {
         ...s,
@@ -228,13 +326,18 @@ export function useGame({
         tasks: buildDailyTasks(day, s.customs),
         fruitsLeft,
         harvestPhase,
+        fruitManifest,
+        cycleDay,
         berries: s.berries + bonus,
         totalBerries: s.totalBerries + bonus,
       };
       if (bonus > 0) fx.toast(`Thưởng trọn ngày +${bonus} berry!`, "berry");
       const e = eng();
       e?.setWilted(wilted);
-      if (harvestPhase === "picking" && fruitsLeft > 0) e?.syncFruits(fruitsLeft, FRUIT_REGROWTH_COUNT);
+      e?.setCyclePhase(cyclePhaseOf(inCycle, cycleDay));
+      if (harvestPhase === "picking" && fruitsLeft > 0) {
+        e?.setFruitManifest(fruitManifest, fruitsLeft);
+      }
       sfx.sleep();
       setState(next);
     },
@@ -247,19 +350,37 @@ export function useGame({
         return;
       }
       const next: GameState = { ...s, berries: s.berries - item.cost, owned: [...s.owned, itemId] };
-      if (itemId === "fertilizer") next.fertCharges += 3;
+      if (itemId === "fertilizer") next.fertCharges += FERT_CHARGES;
       if (itemId === "freeze") next.freezes += 1;
+      if (itemId === "charm") next.luckyCharges += 3;
+      if (itemId === "candy") {
+        // hoàn thành ngay 1 nhiệm vụ chưa xong ngẫu nhiên
+        const open = next.tasks.filter((t) => !t.done);
+        if (open.length === 0) {
+          fx.toast("Hôm nay bé Cam đã xong hết việc rồi!", "info");
+        } else {
+          const t = open[Math.floor(Math.random() * open.length)];
+          next.tasks = next.tasks.map((x) =>
+            x.uid === t.uid ? { ...x, progress: x.target, done: true } : x
+          );
+          water(next, t.xp, t.kind);
+          fx.toast(`Bé Cam ăn kẹo và hoàn thành “${t.name}”!`, "success");
+        }
+      }
       if (item.kind === "decor") {
-        const e = eng();
-        e?.setDecor({
-          fence: next.owned.includes(DECOR_FLAGS[0]),
-          lantern: next.owned.includes(DECOR_FLAGS[1]),
-          mushrooms: next.owned.includes(DECOR_FLAGS[2]),
-          flowers: next.owned.includes(DECOR_FLAGS[3]),
+        const has = (id: string) => next.owned.includes(id);
+        eng()?.setDecor({
+          fence: has("decor_fence"),
+          lantern: has("decor_lantern"),
+          mushrooms: has("decor_mushrooms"),
+          flowers: has("decor_flowers"),
+          pond: has("decor_pond"),
+          scarecrow: has("decor_scarecrow"),
+          swing: has("decor_swing"),
         });
       }
       sfx.buy();
-      fx.toast(`Đã mua ${item.name}!`, "success");
+      if (itemId !== "candy") fx.toast(`Đã mua ${item.name}!`, "success");
       setState(next);
     },
 
@@ -321,19 +442,38 @@ export function useGame({
       sfx.click();
     },
 
-    onFruitPick(x: number, y: number) {
+    onFruitPick(index: number, x: number, y: number) {
       const s = ref.current;
       if (s.fruitsLeft <= 0) return;
+      const type: FruitType = s.fruitManifest[index] ?? "normal";
       const isFirst = s.harvests === 0;
       const per = isFirst ? TREE.value : TREE.regrowthValue;
       const fruitsLeft = s.fruitsLeft - 1;
-      const gain = per;
+
+      // đánh dấu quả đã hái để không tái sử dụng
+      const fruitManifest = s.fruitManifest.map((t, i) => (i === index ? "normal" : t)) as FruitType[];
+      const next: GameState = { ...s, fruitManifest };
+
+      let gain = per;
+      const e = eng();
+      if (type === "giant") {
+        gain = per * GIANT_MULT;
+        e?.floatText(x, y, `SIÊU BỰ! +${gain}`, "#ffd93d", true);
+        e?.sparkAt(x, y, "#ffd93d");
+        sfx.crit();
+      } else if (type === "gift") {
+        const r = applyGift(next, x, y);
+        gain = r.gain;
+        e?.floatText(x, y, r.label, "#c0b5f2", false);
+        sfx.buy();
+      } else {
+        e?.floatText(x, y, `+${gain}`, "#c0b5f2", false);
+        sfx.pop();
+      }
+
       let harvestPhase = s.harvestPhase;
       let harvests = s.harvests;
       let lastHarvestGain = s.lastHarvestGain;
-      const e = eng();
-      e?.floatText(x, y, `+${gain}`, "#c0b5f2", false);
-      sfx.pop();
       if (fruitsLeft === 0) {
         harvestPhase = "done";
         harvests += 1;
@@ -358,24 +498,28 @@ export function useGame({
         }
 
         setState({
-          ...s,
+          ...next,
           fruitsLeft,
           harvestPhase,
           harvests,
           lastHarvestGain: total,
-          berries: s.berries + total,
-          totalBerries: s.totalBerries + total,
+          berries: next.berries + total,
+          totalBerries: next.totalBerries + total,
           fog,
           discovered,
           pendingStories,
+          // bắt đầu chu kỳ nở hoa → quả xanh → quả chín tiếp theo
+          inCycle: true,
+          cycleDay: 0,
+          fruitManifest: [],
         });
         return;
       }
       setState({
-        ...s,
+        ...next,
         fruitsLeft,
-        berries: s.berries + gain,
-        totalBerries: s.totalBerries + gain,
+        berries: next.berries + gain,
+        totalBerries: next.totalBerries + gain,
       });
     },
 
@@ -402,6 +546,88 @@ export function useGame({
       setAudioMuted(m);
       setState({ ...s, muted: m });
       if (!m) sfx.click();
+    },
+
+    /* ---------- TEST MODE ---------- */
+    test: {
+      addBerries(n) {
+        setState((p) => ({ ...p, berries: p.berries + n, totalBerries: p.totalBerries + n }));
+        fx.toast(`[test] +${n} berry`, "info");
+      },
+      addXp(n) {
+        setState((p) => {
+          const c = { ...p };
+          gainXp(c, n);
+          return c;
+        });
+        fx.toast(`[test] +${n} KN`, "info");
+      },
+      setLevel(lv) {
+        setState((p) => {
+          const xp = xpForLevel(lv);
+          return { ...p, xp, level: lv };
+        });
+        eng()?.setLevel(lv);
+        fx.toast(`[test] cấp ${lv}`, "info");
+      },
+      completeAll() {
+        setState((p) => {
+          const c = { ...p };
+          c.tasks = c.tasks.map((t) => (t.done ? t : { ...t, progress: t.target, done: true }));
+          return c;
+        });
+        fx.toast("[test] xong hết nhiệm vụ", "success");
+      },
+      nextDay() {
+        api.endDay();
+        fx.toast("[test] sang ngày mới", "info");
+      },
+      spawnFruits() {
+        setState((p) => {
+          if (p.fruitsLeft > 0) return p;
+          const manifest = generateFruitManifest(FIRST_HARVEST_FRUITS);
+          setTimeout(() => eng()?.setFruitManifest(manifest, FIRST_HARVEST_FRUITS), 50);
+          return { ...p, fruitManifest: manifest, fruitsLeft: FIRST_HARVEST_FRUITS, harvestPhase: "picking" };
+        });
+        fx.toast("[test] spawn quả chín", "berry");
+      },
+      forceHarvest() {
+        setState((p) => {
+          if (p.fruitsLeft === 0) return p;
+          const gain = p.fruitsLeft * (p.harvests === 0 ? TREE.value : TREE.regrowthValue) + 25;
+          return {
+            ...p,
+            fruitsLeft: 0,
+            harvestPhase: "done",
+            harvests: p.harvests + 1,
+            lastHarvestGain: gain,
+            berries: p.berries + gain,
+            totalBerries: p.totalBerries + gain,
+            inCycle: true,
+            cycleDay: 0,
+            fruitManifest: [],
+          };
+        });
+        fx.toast("[test] thu hoạch ngay", "level");
+      },
+      clearFog() {
+        setState((p) => ({ ...p, fog: 0, discovered: LANDMARKS.map((l) => ({ id: l.id, day: p.day })) }));
+        eng()?.setFog(0);
+        eng()?.setDiscovered(LANDMARKS.map((l) => l.id));
+        fx.toast("[test] tan hết sương", "info");
+      },
+      unlockAll() {
+        setState((p) => ({ ...p, owned: SHOP.filter((i) => i.kind !== "consumable").map((i) => i.id) }));
+        fx.toast("[test] mở khóa mọi đồ", "info");
+      },
+      reset() {
+        try { localStorage.removeItem(KEY); } catch { /* noop */ }
+        const s = freshState();
+        s.started = true;
+        setState(s);
+        eng()?.resetTree();
+        fx.toast("[test] reset game", "warn");
+      },
     },
   };
 
@@ -431,21 +657,25 @@ function water(s: GameState, baseXp: number, kind: TaskKind) {
     }, 350);
   }
 
-  // lần đầu VƯỢT cấp 10 → đậu quả (các cấp sau không tự ra quả, chờ chu kỳ 7 ngày)
+  // lần đầu VƯỢT cấp 10 → đậu quả (có thể kèm quả siêu bự / hộp quà)
   if (leveled && prevLevel < FIRST_HARVEST_LEVEL && newLevel >= FIRST_HARVEST_LEVEL && s.fruitsLeft === 0 && s.harvestPhase === "none") {
+    s.fruitManifest = generateFruitManifest(FIRST_HARVEST_FRUITS);
     s.fruitsLeft = FIRST_HARVEST_FRUITS;
     s.harvestPhase = "picking";
     setTimeout(() => {
       engGlobal()?.ripeFx();
-      engGlobal()?.syncFruits(FIRST_HARVEST_FRUITS, FIRST_HARVEST_FRUITS);
+      engGlobal()?.setFruitManifest(s.fruitManifest, FIRST_HARVEST_FRUITS);
       sfx.ripe();
     }, 700);
     bridge.toast?.(`Cây cam ra ${FIRST_HARVEST_FRUITS} quả chín — chạm để hái từng quả!`, "berry");
   }
 
-  // rơi berry
+  // rơi berry (bùa may mắn: +15% rơi, +10% crit, tính trong lần tưới này)
+  const lucky = s.luckyCharges > 0;
+  s.luckyCharges = Math.max(0, s.luckyCharges - 1);
   let rate = kind === "quant" ? 0.7 : 0.4;
   if (s.streak >= BONUS_STREAK) rate += STREAK_BONUS_RATE;
+  if (lucky) rate += 0.15;
   let fertUsed = false;
   if (s.fertCharges > 0) {
     rate += FERT_BONUS;
@@ -456,7 +686,7 @@ function water(s: GameState, baseXp: number, kind: TaskKind) {
   let dropped = Math.random() < rate || s.pity > PITY_LIMIT;
   if (dropped) {
     const base = kind === "quant" ? randInt(3, 8) : randInt(1, 3);
-    const crit = Math.random() < CRIT_CHANCE;
+    const crit = Math.random() < CRIT_CHANCE + (lucky ? 0.1 : 0);
     const amount = base * (crit ? CRIT_MULT : 1);
     s.berries += amount;
     s.totalBerries += amount;

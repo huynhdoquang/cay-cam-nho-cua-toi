@@ -1,10 +1,15 @@
 /* Cây Cam Nhỏ — procedural canvas garden engine. All art drawn in code. */
 
+import type { CyclePhase, FruitType } from "./types";
+
 export interface TreeLook {
   fruit: string; fruitDark: string; glow: string; leaf: string; leafLight: string;
 }
 export interface SkinLook { hair: string; shirt: string; hat: string | null }
-export interface DecorLook { fence: boolean; lantern: boolean; mushrooms: boolean; flowers: boolean }
+export interface DecorLook {
+  fence: boolean; lantern: boolean; mushrooms: boolean; flowers: boolean;
+  pond: boolean; scarecrow: boolean; swing: boolean;
+}
 export interface DropInfo { amount: number; crit: boolean }
 
 interface Particle {
@@ -15,7 +20,7 @@ interface Particle {
 }
 
 interface Floater { x: number; y: number; text: string; color: string; t: number; life: number; size: number; sub?: string }
-interface Fruit { dx: number; dy: number; phase: number; picked: boolean }
+interface Fruit { dx: number; dy: number; phase: number; picked: boolean; type: FruitType }
 interface Cloud { x: number; y: number; s: number; v: number }
 interface Ring { x: number; y: number; r: number; max: number; t: number }
 
@@ -47,7 +52,8 @@ export class GardenEngine {
   leafA = "#3e9142"; leafB = "#58b84e";
   wilted = false;
   skin: SkinLook = { hair: "#7a4a21", shirt: "#58b84e", hat: null };
-  decor: DecorLook = { fence: false, lantern: false, mushrooms: false, flowers: false };
+  decor: DecorLook = { fence: false, lantern: false, mushrooms: false, flowers: false, pond: false, scarecrow: false, swing: false };
+  private cyclePhase: "none" | "bloom" | "green" = "none";
 
   private fruits: Fruit[] = [];
   private particles: Particle[] = [];
@@ -71,7 +77,7 @@ export class GardenEngine {
   private geom = { tx: 0, gy: 0, cx: 0, cy: 0, r: 60 };
   private wiltLeavesSpawned = false;
 
-  onFruitPick: ((x: number, y: number) => void) | null = null;
+  onFruitPick: ((index: number, x: number, y: number) => void) | null = null;
 
   private onDown = (e: PointerEvent) => this.pointerDown(e);
   private onMove = (e: PointerEvent) => this.pointerMove(e);
@@ -169,10 +175,34 @@ export class GardenEngine {
 
   syncFruits(remaining: number, count: number) {
     if (this.fruits.length !== count) {
-      this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({ dx: s[0], dy: s[1], phase: i * 0.9, picked: false }));
+      this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({ dx: s[0], dy: s[1], phase: i * 0.9, picked: false, type: "normal" as FruitType }));
     }
     const pickedCount = count - remaining;
     this.fruits.forEach((f, i) => { f.picked = i < pickedCount; });
+  }
+
+  /** Đặt danh sách quả theo manifest loại (thường / siêu bự / hộp quà). */
+  setFruitManifest(manifest: FruitType[], remaining: number) {
+    const count = manifest.length;
+    this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({
+      dx: s[0], dy: s[1], phase: i * 0.9, picked: false, type: manifest[i] ?? "normal",
+    }));
+    const pickedCount = count - remaining;
+    this.fruits.forEach((f, i) => { f.picked = i < pickedCount; });
+  }
+
+  setCyclePhase(p: "none" | "bloom" | "green") { this.cyclePhase = p; }
+
+  resetTree() {
+    this.level = 1;
+    this.fruits = [];
+    this.cyclePhase = "none";
+    this.particles = [];
+    this.floaters = [];
+    this.rings = [];
+    this.wilted = false;
+    this.fog = 100;
+    this.landmarks = new Set();
   }
 
   setWilted(w: boolean) {
@@ -304,22 +334,25 @@ export class GardenEngine {
     if (this.level < 10 || this.fruits.length === 0) return;
     const { x, y } = this.toLocal(e);
     const g = this.geom;
-    for (const f of this.fruits) {
+    for (let idx = 0; idx < this.fruits.length; idx++) {
+      const f = this.fruits[idx];
       if (f.picked) continue;
       const fx = g.cx + f.dx * g.r * 0.78;
       const fy = g.cy + f.dy * g.r * 0.78;
-      if (Math.hypot(x - fx, y - fy) < 19 * this.u) {
+      const radius = (f.type === "giant" ? 24 : 19) * this.u;
+      if (Math.hypot(x - fx, y - fy) < radius) {
         f.picked = true;
-        for (let i = 0; i < 8; i++) {
+        const burst = f.type === "giant" ? 16 : f.type === "gift" ? 12 : 8;
+        for (let i = 0; i < burst; i++) {
           this.particles.push({
             x: fx, y: fy, vx: (Math.random() - 0.5) * 240 * this.u, vy: -(40 + Math.random() * 160) * this.u,
             g: 500 * this.u, life: 0, maxLife: 0.9, size: (2.5 + Math.random() * 3) * this.u,
-            color: Math.random() > 0.4 ? this.fruit : "#ffd93d", kind: "dot",
+            color: f.type === "gift" ? "#9c8ce8" : Math.random() > 0.4 ? this.fruit : "#ffd93d", kind: "dot",
             rot: 0, vr: 0, bounced: 0,
           });
         }
         this.rings.push({ x: fx, y: fy, r: 4 * this.u, max: 44 * this.u, t: 0 });
-        this.onFruitPick?.(fx, fy);
+        this.onFruitPick?.(idx, fx, fy);
         return;
       }
     }
@@ -741,7 +774,8 @@ export class GardenEngine {
       }
     }
 
-    if (lvl === 8) {
+    // nở hoa: ở cấp 8, hoặc trong pha "bloom" của chu kỳ sau thu hoạch
+    if (lvl === 8 || (lvl >= 10 && this.cyclePhase === "bloom")) {
       const spots: [number, number][] = [[-0.4, -0.3], [0.25, -0.5], [0.5, 0.1], [-0.1, 0.25], [-0.55, 0.15], [0.1, -0.1], [0.45, -0.25]];
       for (const [ox, oy] of spots) {
         const fx = cx + ox * r, fy = cy + oy * r;
@@ -759,7 +793,8 @@ export class GardenEngine {
       }
     }
 
-    if (lvl === 9) {
+    // quả xanh: ở cấp 9, hoặc trong pha "green" của chu kỳ sau thu hoạch
+    if (lvl === 9 || (lvl >= 10 && this.cyclePhase === "green")) {
       for (let i = 0; i < 6; i++) {
         const [ox, oy] = FRUIT_SPOTS[i];
         ctx.fillStyle = "#a5dd8a";
@@ -779,26 +814,83 @@ export class GardenEngine {
       if (f.picked) continue;
       const fx = g.cx + f.dx * g.r * 0.78;
       const fy = g.cy + f.dy * g.r * 0.78 + Math.sin(this.time * 2 + f.phase) * 1.6 * u;
-      const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, 26 * u);
-      glow.addColorStop(0, `${this.glowBase}0.5)`);
-      glow.addColorStop(1, `${this.glowBase}0)`);
+
+      if (f.type === "gift") {
+        // hộp quà bí ẩn
+        const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, 30 * u);
+        glow.addColorStop(0, "rgba(156,140,232,0.55)");
+        glow.addColorStop(1, "rgba(156,140,232,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(fx - 30 * u, fy - 30 * u, 60 * u, 60 * u);
+        const wob = Math.sin(this.time * 4 + f.phase) * 0.08;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(wob);
+        ctx.fillStyle = "#9c8ce8";
+        ctx.strokeStyle = "#5d4fc0";
+        ctx.lineWidth = 2.2 * u;
+        ctx.beginPath();
+        ctx.roundRect(-9 * u, -8 * u, 18 * u, 16 * u, 3 * u);
+        ctx.fill(); ctx.stroke();
+        // nắp + ruy băng
+        ctx.fillStyle = "#c0b5f2";
+        ctx.beginPath();
+        ctx.roundRect(-10.5 * u, -11 * u, 21 * u, 6 * u, 2.5 * u);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#ffd93d";
+        ctx.fillRect(-2 * u, -11 * u, 4 * u, 19 * u);
+        ctx.strokeRect(-2 * u, -11 * u, 4 * u, 19 * u);
+        // dấu hỏi
+        ctx.fillStyle = "#fff9ea";
+        ctx.font = `800 ${Math.round(9 * u)}px "Baloo 2", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText("?", 0, 4.5 * u);
+        ctx.textAlign = "left";
+        ctx.restore();
+        continue;
+      }
+
+      const isGiant = f.type === "giant";
+      const rad = (isGiant ? 15 : 10) * u;
+      const glowR = (isGiant ? 38 : 26) * u;
+      const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, glowR);
+      glow.addColorStop(0, isGiant ? "rgba(255,217,61,0.6)" : `${this.glowBase}0.5)`);
+      glow.addColorStop(1, isGiant ? "rgba(255,217,61,0)" : `${this.glowBase}0)`);
       ctx.fillStyle = glow;
-      ctx.fillRect(fx - 26 * u, fy - 26 * u, 52 * u, 52 * u);
+      ctx.fillRect(fx - glowR, fy - glowR, glowR * 2, glowR * 2);
 
       ctx.fillStyle = this.fruit;
       ctx.strokeStyle = this.fruitDark;
       ctx.lineWidth = 2.4 * u;
       ctx.beginPath();
-      ctx.arc(fx, fy, 10 * u, 0, Math.PI * 2);
+      ctx.arc(fx, fy, rad, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.beginPath();
-      ctx.arc(fx - 3.2 * u, fy - 3.5 * u, 2.8 * u, 0, Math.PI * 2);
+      ctx.arc(fx - rad * 0.32, fy - rad * 0.35, rad * 0.28, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#3e9142";
       ctx.beginPath();
-      ctx.ellipse(fx + 3 * u, fy - 10.5 * u, 4.5 * u, 2.2 * u, -0.6, 0, Math.PI * 2);
+      ctx.ellipse(fx + rad * 0.3, fy - rad * 1.05, 4.5 * u, 2.2 * u, -0.6, 0, Math.PI * 2);
       ctx.fill();
+
+      if (isGiant) {
+        // ngôi sao lấp lánh trên quả siêu bự
+        const sp = 0.6 + 0.4 * Math.sin(this.time * 5 + f.phase);
+        ctx.save();
+        ctx.translate(fx + rad * 0.7, fy - rad * 0.8);
+        ctx.scale(sp, sp);
+        ctx.fillStyle = "#ffd93d";
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2;
+          ctx.lineTo(Math.cos(a) * 6 * u, Math.sin(a) * 6 * u);
+          ctx.lineTo(Math.cos(a + Math.PI / 4) * 2.4 * u, Math.sin(a + Math.PI / 4) * 2.4 * u);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
     }
   }
 

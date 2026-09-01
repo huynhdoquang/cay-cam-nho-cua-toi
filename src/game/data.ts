@@ -1,4 +1,4 @@
-import type { CustomDef, PoseId, ShopItem, TaskDef, TaskInst } from "./types";
+import type { CustomDef, FruitType, PoseId, ShopItem, TaskDef, TaskInst } from "./types";
 
 export const DAILY_XP_CAP = 120;
 export const PITY_LIMIT = 6; // guaranteed drop after N dry waters
@@ -12,9 +12,36 @@ export const STREAK_BONUS_RATE = 0.2;
 // thu hoạch đầu tiên ở cấp 10 (ngày ~21)
 export const FIRST_HARVEST_LEVEL = 10;
 export const FIRST_HARVEST_FRUITS = 8;
-// sau đó cây vẫn lớn tiếp, và quả mọc lại định kỳ
-export const FRUIT_REGROWTH_DAYS = 7;
+// sau đó cây vẫn lớn tiếp, và quả mọc lại theo chu kỳ có giai đoạn ra hoa
 export const FRUIT_REGROWTH_COUNT = 5;
+export const CYCLE_BLOOM_DAYS = 2; // ngày 1-2 của chu kỳ: cây nở hoa
+export const CYCLE_GREEN_DAYS = 2; // ngày 3-4: đậu quả xanh
+export const CYCLE_RIPE_AT = CYCLE_BLOOM_DAYS + CYCLE_GREEN_DAYS + 1; // ngày 5+: quả chín để hái
+export const FRUIT_REGROWTH_DAYS = CYCLE_RIPE_AT; // alias: số ngày để lứa quả mới chín
+
+/* ---------- quả đặc biệt ---------- */
+
+export const GIANT_CHANCE = 0.1; // xác suất một quả là "siêu bự"
+export const GIFT_CHANCE = 0.12; // xác suất một quả là hộp quà bí ẩn
+export const GIANT_MULT = 3; // siêu bự = 3x berry
+
+/** Bảng phần thưởng khi mở hộp quà bí ẩn (trọng số). */
+export interface GiftReward {
+  kind: "berries" | "fert" | "freeze" | "xp" | "cosmetic" | "hug";
+  w: number;
+  min?: number;
+  max?: number;
+  amount?: number;
+  label: string;
+}
+export const GIFT_TABLE: GiftReward[] = [
+  { kind: "berries", w: 28, min: 15, max: 45, label: "Một nắm berry căng mọng" },
+  { kind: "xp", w: 18, amount: 30, label: "Cuốn bí kíp làm vườn (+30 KN)" },
+  { kind: "fert", w: 14, label: "Một túi phân bón thần kỳ" },
+  { kind: "freeze", w: 14, label: "Một viên băng bảo vệ" },
+  { kind: "cosmetic", w: 12, label: "Một món đồ diện mạo bí mật" },
+  { kind: "hug", w: 14, label: "Bé Sương gửi bạn một cái ôm (+5 berry)" },
+];
 
 /* ---------- narrative layer: sương mù & bí mật khu vườn ---------- */
 
@@ -197,6 +224,8 @@ export const HAIR_COLORS: { id: string; name: string; color: string }[] = [
   { id: "hair_orange", name: "Tóc cam", color: "#e8751a" },
   { id: "hair_blue", name: "Tóc xanh biển", color: "#3e7bc0" },
   { id: "hair_pink", name: "Tóc hồng", color: "#e86fa0" },
+  { id: "hair_purple", name: "Tóc tím mộng mơ", color: "#9c8ce8" },
+  { id: "hair_mint", name: "Tóc xanh bạc hà", color: "#5fd0b0" },
 ];
 
 export const SHIRT_COLORS: { id: string; name: string; color: string }[] = [
@@ -204,12 +233,17 @@ export const SHIRT_COLORS: { id: string; name: string; color: string }[] = [
   { id: "shirt_yellow", name: "Áo vàng nắng", color: "#f2b33d" },
   { id: "shirt_red", name: "Áo đỏ dưa hấu", color: "#e85a5a" },
   { id: "shirt_sky", name: "Áo xanh da trời", color: "#4fb8e8" },
+  { id: "shirt_purple", name: "Áo tím hoa cà", color: "#9c8ce8" },
+  { id: "shirt_orange", name: "Áo cam sành", color: "#ff8c2e" },
 ];
 
 export const HATS: { id: string; name: string }[] = [
   { id: "hat_none", name: "Không đội mũ" },
   { id: "hat_frog", name: "Mũ ếch" },
   { id: "hat_orange", name: "Mũ cam" },
+  { id: "hat_crown", name: "Vương miện" },
+  { id: "hat_wizard", name: "Mũ phù thuỷ" },
+  { id: "hat_ribbon", name: "Nơ bướm" },
 ];
 
 export function colorOf(list: { id: string; color: string }[], id: string, fallback: string): string {
@@ -219,24 +253,70 @@ export function colorOf(list: { id: string; color: string }[], id: string, fallb
 /* ---------- shop ---------- */
 
 export const SHOP: ShopItem[] = [
+  // ---- vật phẩm tiêu hao ----
   { id: "fertilizer", name: "Phân bón thần kỳ", desc: `+25% tỉ lệ rơi berry trong ${FERT_CHARGES} lần tưới tới`, cost: 25, icon: "fertilizer", kind: "consumable" },
   { id: "freeze", name: "Băng bảo vệ", desc: "Giữ nguyên streak nếu lỡ một ngày chưa xong nhiệm vụ", cost: 40, icon: "snow", kind: "consumable" },
+  { id: "charm", name: "Bùa may mắn", desc: "Trong 3 lần tưới tới: +15% rơi berry và +10% crit", cost: 35, icon: "charm", kind: "consumable" },
+  { id: "candy", name: "Kẹo ngọt", desc: "Bé Cam ăn kẹo và hoàn thành ngay 1 nhiệm vụ chưa xong hôm nay", cost: 30, icon: "candy", kind: "consumable" },
+  // ---- trang trí vườn ----
   { id: "decor_mushrooms", name: "Nấm xinh", desc: "Khóm nấm đỏ lấm tấm trong vườn", cost: 30, icon: "mushroom", kind: "decor" },
   { id: "decor_lantern", name: "Đèn vườn", desc: "Ngọn đèn ấm áp lấp lánh về chiều", cost: 45, icon: "lantern", kind: "decor" },
   { id: "decor_flowers", name: "Khóm hoa", desc: "Hoa cúc hoạ mi ven lối đất", cost: 50, icon: "flower", kind: "decor" },
+  { id: "decor_pond", name: "Hồ cá koi", desc: "Hồ nước trong veo với mấy chú cá koi lượn lờ", cost: 80, icon: "pond", kind: "decor" },
+  { id: "decor_scarecrow", name: "Bù nhìn vui vẻ", desc: "Anh bù nhìn canh vườn, xua chim và cả nỗi buồn", cost: 55, icon: "scarecrow", kind: "decor" },
+  { id: "decor_swing", name: "Xích đu gỗ", desc: "Chiếc xích đu đung đưa dưới tán cây", cost: 70, icon: "swing", kind: "decor" },
   { id: "decor_fence", name: "Hàng rào gỗ", desc: "Hàng rào bao quanh khu vườn nhỏ", cost: 60, icon: "fence", kind: "decor" },
+  // ---- diện mạo: tóc ----
   { id: "hair_orange", name: "Tóc cam", desc: "Đổi màu tóc cho bé Cam", cost: 40, icon: "hat", kind: "skin", slot: "hair", color: "#e8751a" },
   { id: "hair_blue", name: "Tóc xanh biển", desc: "Đổi màu tóc cho bé Cam", cost: 45, icon: "hat", kind: "skin", slot: "hair", color: "#3e7bc0" },
   { id: "hair_pink", name: "Tóc hồng", desc: "Đổi màu tóc cho bé Cam", cost: 45, icon: "hat", kind: "skin", slot: "hair", color: "#e86fa0" },
+  { id: "hair_purple", name: "Tóc tím mộng mơ", desc: "Đổi màu tóc cho bé Cam", cost: 50, icon: "hat", kind: "skin", slot: "hair", color: "#9c8ce8" },
+  { id: "hair_mint", name: "Tóc xanh bạc hà", desc: "Đổi màu tóc cho bé Cam", cost: 50, icon: "hat", kind: "skin", slot: "hair", color: "#5fd0b0" },
+  // ---- diện mạo: áo ----
   { id: "shirt_yellow", name: "Áo vàng nắng", desc: "Áo mới cho bé Cam", cost: 40, icon: "shirt", kind: "skin", slot: "shirt", color: "#f2b33d" },
   { id: "shirt_red", name: "Áo đỏ dưa hấu", desc: "Áo mới cho bé Cam", cost: 40, icon: "shirt", kind: "skin", slot: "shirt", color: "#e85a5a" },
   { id: "shirt_sky", name: "Áo xanh da trời", desc: "Áo mới cho bé Cam", cost: 40, icon: "shirt", kind: "skin", slot: "shirt", color: "#4fb8e8" },
+  { id: "shirt_purple", name: "Áo tím hoa cà", desc: "Áo mới cho bé Cam", cost: 45, icon: "shirt", kind: "skin", slot: "shirt", color: "#9c8ce8" },
+  { id: "shirt_orange", name: "Áo cam sành", desc: "Áo ton-sur-ton với cây cam", cost: 45, icon: "shirt", kind: "skin", slot: "shirt", color: "#ff8c2e" },
+  // ---- diện mạo: mũ ----
   { id: "hat_frog", name: "Mũ ếch", desc: "Chiếc mũ ếch có hai mắt lồi siêu cute", cost: 60, icon: "frog", kind: "skin", slot: "hat" },
   { id: "hat_orange", name: "Mũ cam", desc: "Mũ len hình quả cam có lá", cost: 50, icon: "citrus", kind: "skin", slot: "hat" },
+  { id: "hat_crown", name: "Vương miện", desc: "Bé Cam là hoàng tộc của khu vườn này", cost: 120, icon: "crown", kind: "skin", slot: "hat" },
+  { id: "hat_wizard", name: "Mũ phù thuỷ", desc: "Mũ chóp nhọn đầy sao, biết đâu có phép màu", cost: 90, icon: "wizard", kind: "skin", slot: "hat" },
+  { id: "hat_ribbon", name: "Nơ bướm", desc: "Chiếc nơ xinh xắn buộc lệch một bên", cost: 45, icon: "ribbon", kind: "skin", slot: "hat" },
 ];
 
-export const DECOR_FLAGS = ["decor_fence", "decor_lantern", "decor_mushrooms", "decor_flowers"] as const;
+export const DECOR_FLAGS = ["decor_fence", "decor_lantern", "decor_mushrooms", "decor_flowers", "decor_pond", "decor_scarecrow", "decor_swing"] as const;
 
 export function randInt(a: number, b: number): number {
   return a + Math.floor(Math.random() * (b - a + 1));
+}
+
+/** Sinh danh sách loại quả cho một lứa (đảm bảo ít nhất 1 quả thường). */
+export function generateFruitManifest(count: number): FruitType[] {
+  const m: FruitType[] = [];
+  for (let i = 0; i < count; i++) {
+    const roll = Math.random();
+    if (roll < GIANT_CHANCE) m.push("giant");
+    else if (roll < GIANT_CHANCE + GIFT_CHANCE) m.push("gift");
+    else m.push("normal");
+  }
+  // đảm bảo không phải tất cả đều đặc biệt (luôn có quả thường)
+  if (m.length > 1 && m.every((t) => t !== "normal")) {
+    const arr: FruitType[] = [...m];
+    arr[0] = "normal";
+    return arr;
+  }
+  return m;
+}
+
+/** Rút một phần thưởng từ hộp quà bí ẩn (theo trọng số). */
+export function rollGift(): GiftReward {
+  const total = GIFT_TABLE.reduce((s, g) => s + g.w, 0);
+  let r = Math.random() * total;
+  for (const g of GIFT_TABLE) {
+    r -= g.w;
+    if (r <= 0) return g;
+  }
+  return GIFT_TABLE[0];
 }

@@ -4,6 +4,12 @@ export type PoseId =
 
 export type TaskKind = "binary" | "quant";
 
+/** Loại quả trên cây: thường / siêu bự / hộp quà bí ẩn. */
+export type FruitType = "normal" | "giant" | "gift";
+
+/** Pha của chu kỳ ra quả sau thu hoạch. */
+export type CyclePhase = "none" | "bloom" | "green" | "ripe";
+
 export interface TaskDef {
   id: string;
   name: string;
@@ -72,6 +78,9 @@ export interface GameState {
   fruitsLeft: number;
   harvestPhase: "none" | "picking" | "done";
   lastHarvestGain: number;
+  fruitManifest: FruitType[]; // loại của từng quả trong lứa hiện tại
+  cycleDay: number; // ngày trong chu kỳ ra quả sau thu hoạch (0 = chưa bắt đầu)
+  inCycle: boolean; // đang trong chu kỳ nở hoa → quả xanh → quả chín
   tasks: TaskInst[];
   customs: CustomDef[];
   owned: string[];
@@ -80,6 +89,7 @@ export interface GameState {
   hat: string | null;
   fertCharges: number;
   freezes: number;
+  luckyCharges: number; // bùa may mắn: tăng tỉ lệ rơi + crit trong N lần tưới
   pity: number;
   wilted: boolean;
   muted: boolean;
