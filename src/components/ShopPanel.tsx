@@ -10,16 +10,15 @@ interface Props {
 
 const KIND_META: Record<ShopItem["kind"], { title: string; icon: string; bg: string; fg: string }> = {
   consumable: { title: "Vật phẩm", icon: "spark", bg: "bg-lime-200", fg: "text-lime-900" },
-  seed: { title: "Hạt giống", icon: "seed", bg: "bg-leaf-300", fg: "text-leaf-900" },
   decor: { title: "Trang trí vườn", icon: "flower", bg: "bg-tang-200", fg: "text-tang-700" },
   skin: { title: "Diện mạo bé Cam", icon: "hat", bg: "bg-berry-300", fg: "text-berry-700" },
 };
 
 export function ShopPanel({ state, api }: Props) {
-  const groups: ShopItem["kind"][] = ["consumable", "seed", "decor", "skin"];
+  const groups: ShopItem["kind"][] = ["consumable", "decor", "skin"];
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto scroll-cute pr-0.5">
+    <div className="flex flex-col gap-3">
       <h2 className="font-display text-lg font-extrabold text-bark-900 flex items-center gap-2 sticky top-0 bg-cream-200 py-0.5 z-10">
         <Icon name="basket" size={19} className="text-tang-600" />
         Cửa hàng
@@ -48,7 +47,6 @@ export function ShopPanel({ state, api }: Props) {
 
 function ShopRow({ item, state, api }: { item: ShopItem; state: GameState; api: GameApi }) {
   const owned = state.owned.includes(item.id);
-  const unlockedSeed = item.kind === "seed" && item.treeId != null && state.unlockedTrees.includes(item.treeId);
   const affordable = state.berries >= item.cost;
 
   const isActive =
@@ -58,24 +56,23 @@ function ShopRow({ item, state, api }: { item: ShopItem; state: GameState; api: 
 
   const countChip =
     item.id === "fertilizer" && state.fertCharges > 0 ? `đang có ×${state.fertCharges}` :
+    item.id === "charm" && state.luckyCharges > 0 ? `đang có ×${state.luckyCharges}` :
     item.id === "freeze" && state.freezes > 0 ? `đang có ×${state.freezes}` : null;
 
   let right: React.ReactNode;
-  if (unlockedSeed) {
-    right = <span className="chip bg-leaf-300 text-leaf-900 text-[11px]"><Icon name="check" size={12} />Đã mở khóa</span>;
-  } else if (item.kind === "skin") {
+  if (item.kind === "skin") {
     right = owned ? (
       isActive ? (
-        <span className="chip bg-tang-300 text-bark-800 text-[11px]"><Icon name="star" size={12} />Đang dùng</span>
+        <span className="chip chip-sm bg-tang-300 text-bark-800 text-[11px]"><Icon name="star" size={12} />Đang dùng</span>
       ) : (
-        <button onClick={() => api.equip(item.slot!, item.id)} className="btn btn-leaf px-2.5 py-1.5 text-xs">Dùng</button>
+        <button onClick={() => api.equip(item.slot!, item.id)} className="btn btn-leaf px-3 py-2 text-[13px]">Dùng</button>
       )
     ) : (
       <PriceBtn cost={item.cost} affordable={affordable} onBuy={() => api.buy(item.id)} />
     );
   } else if (item.kind === "decor") {
     right = owned ? (
-      <span className="chip bg-leaf-300 text-leaf-900 text-[11px]"><Icon name="check" size={12} />Trong vườn</span>
+      <span className="chip chip-sm bg-leaf-300 text-leaf-900 text-[11px]"><Icon name="check" size={12} />Trong vườn</span>
     ) : (
       <PriceBtn cost={item.cost} affordable={affordable} onBuy={() => api.buy(item.id)} />
     );
@@ -112,7 +109,7 @@ function ShopRow({ item, state, api }: { item: ShopItem; state: GameState; api: 
 
 function PriceBtn({ cost, affordable, onBuy }: { cost: number; affordable: boolean; onBuy: () => void }) {
   return (
-    <button onClick={onBuy} disabled={!affordable} className={`btn px-2.5 py-1.5 text-xs ${affordable ? "btn-berry" : "btn-wood"}`}>
+    <button onClick={onBuy} disabled={!affordable} className={`btn px-3 py-2 text-[13px] ${affordable ? "btn-berry" : "btn-wood"}`}>
       <Icon name="berry" size={13} />
       {cost}
     </button>

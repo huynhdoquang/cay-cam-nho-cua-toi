@@ -1,251 +1,284 @@
-import { useState } from "react";
-import type { GameState, TreeId } from "../game/types";
-import { TREES } from "../game/data";
-import type { GameApi, ToastMsg } from "../game/useGame";
-import { Chibi } from "./Chibi";
-import { MiniTree } from "./MiniTree";
+import type { ReactNode } from "react";
+import type { GameState } from "../game/types";
+import { FRUIT_REGROWTH_DAYS, LANDMARKS, TREE } from "../game/data";
+import type { GameApi } from "../game/useGame";
+import type { ToastMsg } from "../game/useGame";
 import { Icon } from "./icons";
+import { Chibi } from "./Chibi";
 
-/* ---------- toasts ---------- */
+const SHEET_PANEL =
+  "pop-in flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[22px] border-[3px] border-b-0 border-bark-700 bg-cream-200 shadow-[0_-6px_24px_rgba(0,0,0,0.4)] sm:max-w-md sm:rounded-[18px] sm:border-b-[3px] sm:shadow-[0_10px_0_rgba(43,26,12,0.5)]";
 
-const TOAST_STYLE: Record<ToastMsg["kind"], { cls: string; icon: string }> = {
-  info: { cls: "bg-cream-200 text-bark-800", icon: "sprout" },
-  success: { cls: "bg-leaf-300 text-leaf-900", icon: "check" },
-  warn: { cls: "bg-tang-300 text-bark-800", icon: "leaf" },
-  berry: { cls: "bg-berry-300 text-berry-700", icon: "berry" },
-  level: { cls: "bg-tang-400 text-bark-900", icon: "star" },
-};
+function SheetShell({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-bark-950/70 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={label}>
+      <div
+        className={SHEET_PANEL}
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
+        <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-bark-700/30 sm:hidden" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Thu hoạch ---------------- */
+
+export function HarvestModal({ state, api }: { state: GameState; api: GameApi }) {
+  return (
+    <SheetShell label="Thu hoạch">
+      <div className="min-h-0 overflow-y-auto scroll-cute p-5 text-center">
+        <div className="mx-auto w-fit rotate-[-6deg]">
+          <span className="stamp inline-block rounded-xl border-[3px] border-tang-600 bg-tang-200 px-4 py-1.5 font-display text-lg font-extrabold uppercase tracking-wider text-tang-700 sm:text-xl">
+            Mùa thu hoạch #{state.harvests}!
+          </span>
+        </div>
+        <h2 className="mt-3 font-display text-2xl font-extrabold text-bark-900 sm:text-3xl">Hái trọn giỏ {TREE.name}</h2>
+
+        <div className="mx-auto mt-3 w-fit">
+          <div className="chip bg-berry-300 px-4 py-1.5 text-lg text-berry-700 sm:text-xl">
+            <Icon name="berry" size={20} />
+            +{state.lastHarvestGain}
+          </div>
+          <p className="mt-1.5 font-body text-[11.5px] font-medium text-bark-600 sm:text-xs">
+            gồm thưởng mùa · streak {state.streak} ngày
+          </p>
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-leaf-600/60 bg-leaf-200/70 p-3 text-left">
+          <Chibi pose="plant" size={48} />
+          <p className="font-body text-[12px] font-semibold leading-snug text-leaf-900">
+            Mùa quả khiến <b>sương mù tan bớt</b> — biết đâu khu vườn vừa hé lộ một bí mật mới? Cây cam vẫn sẽ lớn tiếp thành cổ thụ, và lứa quả sau ra mỗi {FRUIT_REGROWTH_DAYS} ngày.
+          </p>
+        </div>
+      </div>
+      <div className="shrink-0 border-t-2 border-bark-700/20 p-3">
+        <button onClick={api.closeHarvest} className="btn btn-leaf w-full py-3 text-base">
+          <Icon name="sprout" size={19} />
+          Tiếp tục chăm cây
+        </button>
+      </div>
+    </SheetShell>
+  );
+}
+
+/* ---------------- Chuyện của Bé Sương ---------------- */
+
+function MistSprite({ size = 92 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" className="floaty" aria-hidden>
+      <g>
+        <ellipse cx="50" cy="88" rx="22" ry="5" fill="rgba(43,26,12,0.15)" />
+        <path
+          d="M50 14c22 0 34 16 34 33 0 15-10 24-20 27 3 5 1 9-3 7-3-2-5-6-6-9-1.6.3-3.3.4-5 .4s-3.4-.1-5-.4c-1 3-3 7-6 9-4 2-6-2-3-7-10-3-20-12-20-27 0-17 12-33 34-33z"
+          fill="#e8f4f8"
+          stroke="#3b2412"
+          strokeWidth="3"
+          strokeLinejoin="round"
+        />
+        <path d="M30 40c4-8 11-13 20-13" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" opacity="0.8" fill="none" />
+        <circle cx="40" cy="48" r="3.4" fill="#3b2412" />
+        <circle cx="60" cy="48" r="3.4" fill="#3b2412" />
+        <circle cx="41.2" cy="46.8" r="1.1" fill="#ffffff" />
+        <circle cx="61.2" cy="46.8" r="1.1" fill="#ffffff" />
+        <path d="M45 56q5 4.5 10 0" stroke="#3b2412" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+        <circle cx="32" cy="55" r="4" fill="#ffa3a3" opacity="0.7" />
+        <circle cx="68" cy="55" r="4" fill="#ffa3a3" opacity="0.7" />
+        <g className="sparkle-f" fill="#ffd93d">
+          <path d="M16 24l1.6 3.8 3.8 1.6-3.8 1.6L16 34.8l-1.6-3.8-3.8-1.6 3.8-1.6z" />
+        </g>
+        <g className="sparkle-f" style={{ animationDelay: "0.5s" }} fill="#9c8ce8">
+          <path d="M84 30l1.4 3.2 3.2 1.4-3.2 1.4-1.4 3.2-1.4-3.2-3.2-1.4 3.2-1.4z" />
+        </g>
+        <g className="sparkle-f" style={{ animationDelay: "1s" }} fill="#ffd93d">
+          <path d="M78 68l1.2 2.8 2.8 1.2-2.8 1.2-1.2 2.8-1.2-2.8-2.8-1.2 2.8-1.2z" />
+        </g>
+      </g>
+    </svg>
+  );
+}
+
+export function StoryModal({ state, api }: { state: GameState; api: GameApi }) {
+  const id = state.pendingStories[0];
+  const beat = LANDMARKS.find((l) => l.id === id);
+  if (!beat) return null;
+  const remaining = state.pendingStories.length - 1;
+
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-night-900/80 p-4" role="dialog" aria-modal="true" aria-label={beat.name}>
+      <div className="pop-in w-full max-w-sm overflow-hidden rounded-2xl border-[3px] border-bark-700 bg-cream-200 shadow-[0_10px_0_rgba(43,26,12,0.5)]">
+        <div className="relative bg-gradient-to-b from-[#cfe8f2] to-[#eaf6f0] px-5 pb-2 pt-5 text-center">
+          <MistSprite />
+          <p className="font-display text-[12px] font-extrabold uppercase tracking-[0.18em] text-bark-600">
+            Bé Sương thì thầm…
+          </p>
+        </div>
+        <div className="p-5 pt-3 text-center">
+          <h2 className="font-display text-2xl font-extrabold text-bark-900">{beat.name}</h2>
+          <p className="mt-2 font-body text-[13.5px] font-medium leading-relaxed text-bark-700">
+            “{beat.story}”
+          </p>
+
+          <div className="mt-4 rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
+            <div className="flex items-center justify-between font-display text-[11px] font-extrabold text-bark-600">
+              <span>Sương mù khu vườn</span>
+              <span>{state.fog}%</span>
+            </div>
+            <div className="mt-1.5 h-3 overflow-hidden rounded-full border-2 border-bark-800/40 bg-skyy-300/50">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-skyy-400 to-skyy-600 transition-all duration-700"
+                style={{ width: `${state.fog}%` }}
+              />
+            </div>
+            <p className="mt-1.5 font-body text-[11px] font-semibold text-bark-600">
+              {state.fog > 0 ? "Thu hoạch mỗi mùa để sương tan thêm — còn nhiều bí mật đang chờ…" : "Sương đã tan hết — khu vườn thuộc về bạn!"}
+            </p>
+          </div>
+        </div>
+        <div className="p-4 pt-0">
+          <button onClick={api.dismissStory} className="btn btn-sky w-full py-3 text-base">
+            <Icon name="spark" size={18} />
+            {remaining > 0 ? `Nghe tiếp (${remaining} chuyện nữa)` : "Tuyệt quá, ra vườn thôi!"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Luật chơi ---------------- */
+
+const RULES: { icon: string; text: ReactNode }[] = [
+  { icon: "clipboard", text: <>Mỗi nhiệm vụ hoàn thành = <b>1 lần tưới cây</b>: +KN và có thể rơi <b>berry</b>. Nhiệm vụ đo lường rơi berry nhiều hơn.</> },
+  { icon: "star", text: <>Trần <b>120 KN/ngày</b> để giữ nhịp vừa sức — quá trần, berry vẫn rơi như thường.</> },
+  { icon: "berry", text: <>Tỷ lệ rơi: Có/Không <b>40%</b> (1–3), đo lường <b>70%</b> (3–8). <b>Crit 5%</b> nhân 5! Tưới 6 lần không rơi thì lần sau <b>chắc chắn rơi</b>.</> },
+  { icon: "flame", text: <>Streak ≥ <b>7 ngày</b> cộng thêm <b>+20%</b> tỷ lệ rơi. Lỡ một ngày: mất streak và cây héo nhẹ — <b>Băng bảo vệ</b> sẽ đỡ thay.</> },
+  { icon: "basket", text: <>Cây đạt <b>cấp 10</b> sẽ chín quả: tự tay <b>chạm từng quả</b> để hái. Sau đó cây vẫn lớn tiếp, cứ <b>7 ngày</b> lại ra quả mới.</> },
+  { icon: "mist", text: <>Khu vườn chìm trong <b>sương mù</b>. Mỗi mùa thu hoạch làm sương tan bớt, hé lộ suối, cầu, nhà gỗ… và những câu chuyện của <b>Bé Sương</b>.</> },
+  { icon: "drop", text: <>Cây nhớ bạn: vắng nhà <b>từ 2 ngày</b>, một quả cam có thể rụng và streak dừng lại. Ghé qua mỗi ngày nhé!</> },
+  { icon: "moon", text: <>Xong nhiệm vụ? Bấm <b>Đi ngủ thôi</b> để sang ngày mới — nhiệm vụ và trần KN sẽ làm mới.</> },
+];
+
+export function HelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-bark-950/70 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Luật chơi">
+      <div className={SHEET_PANEL} style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-bark-700/30 sm:hidden" />
+        <div className="flex shrink-0 items-center gap-2 border-b-2 border-bark-700/20 px-4 py-3">
+          <Icon name="book" size={20} className="text-tang-600" />
+          <h2 className="font-display text-lg font-extrabold text-bark-900">Luật chơi</h2>
+          <button onClick={onClose} className="hud-btn ml-auto h-9 w-9" aria-label="Đóng">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto scroll-cute p-4">
+          {RULES.map((r, i) => (
+            <div key={i} className="flex items-start gap-2.5 rounded-xl border-2 border-bark-700/25 bg-cream-100 p-2.5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border-2 border-bark-800/40 bg-leaf-300 text-leaf-900">
+                <Icon name={r.icon} size={18} />
+              </span>
+              <p className="font-body text-[13px] font-medium leading-snug text-bark-800">{r.text}</p>
+            </div>
+          ))}
+        </div>
+        <div className="shrink-0 p-3">
+          <button onClick={onClose} className="btn btn-leaf w-full py-3 text-base">Đã hiểu, làm vườn thôi!</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Màn hình bắt đầu ---------------- */
+
+export function StartScreen({ hasSave, day, onStart }: { hasSave: boolean; day: number; onStart: (fresh: boolean) => void }) {
+  return (
+    <div className="fixed inset-0 z-40 overflow-y-auto scroll-cute bg-night-900/85 backdrop-blur-[2px]">
+      <div
+        className="flex min-h-full flex-col items-center justify-center gap-5 px-4 py-8"
+        style={{ paddingTop: "max(2rem, env(safe-area-inset-top, 0px))", paddingBottom: "max(2rem, env(safe-area-inset-bottom, 0px))" }}
+      >
+        <div className="pop-in flex flex-col items-center text-center">
+          <div className="floaty grid h-20 w-20 place-items-center rounded-[26px] border-[3px] border-bark-900 bg-tang-400 shadow-[0_6px_0_var(--color-bark-900)] sm:h-24 sm:w-24">
+            <Icon name="sprout" size={48} className="text-bark-900" />
+          </div>
+          <h1 className="title-wobble mt-4 font-display text-4xl font-extrabold leading-tight text-cream-100 sm:text-6xl" style={{ textShadow: "0 4px 0 rgba(43,26,12,.8)" }}>
+            <span>C</span><span style={{ animationDelay: ".06s" }}>â</span><span style={{ animationDelay: ".12s" }}>y</span>{" "}
+            <span style={{ animationDelay: ".18s" }} className="text-tang-400">C</span><span style={{ animationDelay: ".24s" }} className="text-tang-400">a</span><span style={{ animationDelay: ".3s" }} className="text-tang-400">m</span>{" "}
+            <span style={{ animationDelay: ".36s" }} className="text-leaf-400">N</span><span style={{ animationDelay: ".42s" }} className="text-leaf-400">h</span><span style={{ animationDelay: ".48s" }} className="text-leaf-400">ỏ</span>
+          </h1>
+          <p className="mt-2 max-w-sm font-body text-sm font-medium text-cream-300 sm:text-base">
+            Một cây cam duy nhất. Hoàn thành thói quen mỗi ngày để tưới cây, ngắm bé Cam khôn lớn — cây sẽ lớn mãi thành cổ thụ, quả ngọt ra đều.
+          </p>
+        </div>
+
+        <div className="pop-in flex flex-wrap items-center justify-center gap-2" style={{ animationDelay: ".12s" }}>
+          {[
+            { icon: "clipboard", label: "6 nhiệm vụ/ngày" },
+            { icon: "berry", label: "Rơi berry · crit ×5" },
+            { icon: "flame", label: "Giữ chuỗi streak" },
+            { icon: "sprout", label: "Cây lớn mãi không ngừng" },
+            { icon: "mist", label: "Sương mù & bí mật khu vườn" },
+          ].map((f) => (
+            <span key={f.label} className="chip bg-night-700 text-xs text-cream-200 border-bark-600 sm:text-sm">
+              <Icon name={f.icon} size={15} className="text-tang-400" />
+              {f.label}
+            </span>
+          ))}
+        </div>
+
+        <div className="pop-in flex items-end gap-2" style={{ animationDelay: ".2s" }}>
+          <Chibi pose="exercise" size={54} />
+          <Chibi pose="read" size={62} />
+          <Chibi pose="sleep" size={54} />
+          <span className="chip mb-1 bg-night-700 text-[11px] text-cream-300 border-bark-600">+11 hoạt cảnh nữa</span>
+        </div>
+
+        <div className="pop-in flex w-full max-w-xs flex-col gap-2.5" style={{ animationDelay: ".28s" }}>
+          {hasSave && (
+            <button onClick={() => onStart(false)} className="btn btn-tang glow-pulse w-full py-3.5 text-base sm:text-lg">
+              <Icon name="arrow" size={20} />
+              Chơi tiếp · Ngày {day}
+            </button>
+          )}
+          <button onClick={() => onStart(true)} className={`btn w-full py-3.5 text-base sm:text-lg ${hasSave ? "btn-cream" : "btn-leaf glow-pulse"}`}>
+            <Icon name={hasSave ? "sprout" : "arrow"} size={20} />
+            {hasSave ? "Trồng cây mới từ đầu" : "Bắt đầu trồng cây"}
+          </button>
+          <p className="text-center font-body text-[11px] font-medium text-cream-300/80">
+            {hasSave ? "Chơi tiếp sẽ giữ nguyên vườn hiện tại." : "Tiến độ được lưu ngay trên máy bạn."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Toasts ---------------- */
 
 export function Toasts({ list }: { list: ToastMsg[] }) {
+  const style: Record<ToastMsg["kind"], { cls: string; icon: string }> = {
+    info: { cls: "bg-cream-100 text-bark-800", icon: "spark" },
+    success: { cls: "bg-leaf-500 text-cream-100", icon: "check" },
+    warn: { cls: "bg-skyy-400 text-bark-900", icon: "snow" },
+    berry: { cls: "bg-berry-500 text-cream-100", icon: "berry" },
+    level: { cls: "bg-tang-500 text-cream-100", icon: "star" },
+  };
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[74px] z-50 flex w-[min(92vw,430px)] -translate-x-1/2 flex-col items-center gap-2">
+    <div
+      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-1.5 px-3"
+      style={{ top: "calc(env(safe-area-inset-top, 0px) + 96px)" }}
+    >
       {list.map((t) => {
-        const s = TOAST_STYLE[t.kind];
+        const s = style[t.kind];
         return (
           <div key={t.id} className={`toast-in chip chip-toast max-w-full text-[13px] shadow-xl ${s.cls}`}>
-            <Icon name={s.icon} size={16} className="shrink-0" />
-            <span className="font-body font-bold leading-snug">{t.text}</span>
+            <Icon name={s.icon} size={15} />
+            <span className="truncate">{t.text}</span>
           </div>
         );
       })}
     </div>
-  );
-}
-
-/* ---------- shell ---------- */
-
-function Overlay({ children, dim = true }: { children: React.ReactNode; dim?: boolean }) {
-  return (
-    <div
-      className={`fixed inset-0 z-40 grid place-items-center overflow-y-auto p-4 ${dim ? "bg-[rgba(10,22,14,0.78)]" : ""}`}
-      style={{ backdropFilter: dim ? "blur(3px)" : undefined }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/* ---------- start screen ---------- */
-
-export function StartScreen({ hasSave, day, onStart }: { hasSave: boolean; day: number; onStart: (fresh: boolean) => void }) {
-  return (
-    <div className="fixed inset-0 z-40 overflow-y-auto" style={{ background: "radial-gradient(1000px 600px at 50% -10%, rgba(255,167,51,0.14), transparent 60%), radial-gradient(800px 500px at 90% 110%, rgba(88,184,78,0.18), transparent 60%), #122b1d" }}>
-      <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1.5px)", backgroundSize: "24px 24px" }} />
-      {/* drifting leaves */}
-      <svg className="pointer-events-none absolute left-[8%] top-[14%] floaty" width="34" height="34" viewBox="0 0 24 24" fill="#58b84e" opacity="0.5"><path d="M4.5 19.5C4.5 10 11 4.5 20 4.5c0 9-6.5 15-15.5 15z" /></svg>
-      <svg className="pointer-events-none absolute right-[10%] top-[22%] floaty" style={{ animationDelay: "1.2s" }} width="26" height="26" viewBox="0 0 24 24" fill="#ffa733" opacity="0.5"><path d="M4.5 19.5C4.5 10 11 4.5 20 4.5c0 9-6.5 15-15.5 15z" /></svg>
-      <svg className="pointer-events-none absolute left-[16%] bottom-[18%] floaty" style={{ animationDelay: "0.6s" }} width="28" height="28" viewBox="0 0 24 24" fill="#7acb5f" opacity="0.4"><path d="M4.5 19.5C4.5 10 11 4.5 20 4.5c0 9-6.5 15-15.5 15z" /></svg>
-
-      <div className="relative mx-auto flex min-h-full w-full max-w-xl flex-col items-center justify-center gap-5 py-8 text-center">
-        <div className="chip bg-leaf-300/90 text-leaf-900 text-xs pop-in">
-          <Icon name="sprout" size={14} />
-          game trồng cây · gieo thói quen
-        </div>
-
-        <h1 className="title-wobble font-display text-6xl font-extrabold leading-none text-cream-100 sm:text-7xl" style={{ textShadow: "0 4px 0 #c96a1e, 0 8px 0 rgba(43,26,12,0.55)" }}>
-          <span>Cây&nbsp;</span>
-          <span style={{ color: "#ffa733", animationDelay: "0.25s" }}>Cam&nbsp;</span>
-          <span style={{ animationDelay: "0.5s" }}>Nhỏ</span>
-        </h1>
-
-        <div className="floaty">
-          <Chibi pose="plant" size={150} hair="#7a4a21" shirt="#58b84e" />
-        </div>
-
-        <div className="panel-dark w-full max-w-md p-4 text-left pop-in">
-          <p className="mb-2.5 font-display text-sm font-extrabold uppercase tracking-wider text-cream-300">Cách chơi</p>
-          <ol className="flex flex-col gap-2.5">
-            {[
-              { icon: "clipboard", text: "Hoàn thành nhiệm vụ hàng ngày — bé Cam sẽ diễn hoạt từng việc thay cho những dòng chữ khô khan." },
-              { icon: "drop", text: "Mỗi việc xong là một lần tưới cây: nhận KN, cây lớn qua 10 cấp, berry rơi lách tách (có crit ×5!)." },
-              { icon: "basket", text: "Cây cấp 10 sẽ chín quả — tự tay hái từng quả, nhận thưởng lớn, rồi gieo giống cây mới." },
-            ].map((s, i) => (
-              <li key={i} className="flex items-start gap-3">
-                <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border-2 border-bark-950 bg-tang-400 text-bark-900">
-                  <Icon name={s.icon} size={16} />
-                </span>
-                <p className="font-body text-[13px] font-medium leading-snug text-cream-200">{s.text}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div className="flex w-full max-w-md flex-col gap-2.5">
-          {hasSave && (
-            <button onClick={() => onStart(false)} className="btn btn-tang glow-pulse w-full py-3.5 text-lg">
-              <Icon name="arrow" size={20} />
-              Tiếp tục · Ngày {day}
-            </button>
-          )}
-          <button onClick={() => onStart(true)} className={`btn w-full py-3 text-base ${hasSave ? "btn-wood" : "btn-tang glow-pulse text-lg py-3.5"}`}>
-            <Icon name="sprout" size={19} />
-            {hasSave ? "Trồng cây mới từ đầu" : "Bắt đầu trồng cây"}
-          </button>
-        </div>
-
-        <p className="font-body text-[11px] font-medium text-cream-300/60">Tiến độ được lưu ngay trên máy của bạn · không cần tài khoản</p>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- harvest ---------- */
-
-export function HarvestModal({ state, api }: { state: GameState; api: GameApi }) {
-  const [sel, setSel] = useState<TreeId>(state.treeType);
-  const tree = TREES[state.treeType];
-  const bonus = 20 + state.streak * 2;
-  const fromFruits = Math.max(0, state.lastHarvestGain - bonus);
-
-  return (
-    <Overlay>
-      <div className="panel pop-in w-full max-w-lg p-5">
-        <div className="text-center">
-          <div className="chip bg-tang-400 text-bark-900 text-xs">
-            <Icon name="basket" size={14} />
-            Mùa thu hoạch #{state.harvests}
-          </div>
-          <h2 className="mt-2 font-display text-4xl font-extrabold text-bark-900" style={{ textShadow: "0 2px 0 rgba(255,196,107,0.8)" }}>
-            Hết sạch quả rồi!
-          </h2>
-          <p className="font-body text-sm font-semibold text-bark-600">
-            Cây {tree.name} đã hoàn thành sứ mệnh sau {state.day} ngày chăm sóc.
-          </p>
-        </div>
-
-        <div className="mt-4 rounded-xl border-2 border-bark-700/30 bg-cream-100 p-3.5">
-          <div className="flex items-center justify-between font-body text-[13px] font-semibold text-bark-700">
-            <span>Berry từ {tree.fruits} quả hái</span>
-            <span className="font-display font-bold">+{fromFruits}</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between font-body text-[13px] font-semibold text-bark-700">
-            <span>Thưởng streak ({state.streak} ngày)</span>
-            <span className="font-display font-bold">+{bonus}</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between border-t-2 border-dashed border-bark-500/40 pt-2">
-            <span className="font-display text-lg font-extrabold text-bark-900">Tổng cộng</span>
-            <span className="chip bg-berry-300 text-berry-700 text-lg">
-              <Icon name="berry" size={18} />
-              +{state.lastHarvestGain}
-            </span>
-          </div>
-        </div>
-
-        <p className="mt-4 mb-2 text-center font-display text-sm font-extrabold uppercase tracking-wide text-bark-600">
-          Gieo hạt cho mùa sau
-        </p>
-        <div className="grid grid-cols-3 gap-2">
-          {state.unlockedTrees.map((id) => {
-            const t = TREES[id];
-            const active = sel === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setSel(id)}
-                className={`flex flex-col items-center rounded-xl border-[3px] p-2 transition-all ${
-                  active
-                    ? "border-tang-500 bg-tang-200 -translate-y-1 shadow-[0_5px_0_rgba(201,106,30,0.5)]"
-                    : "border-bark-700/30 bg-cream-100 hover:border-bark-500"
-                }`}
-              >
-                <MiniTree tree={t} locked={false} />
-                <span className="font-display text-xs font-extrabold text-bark-900">{t.name}</span>
-                <span className="font-body text-[10px] font-bold text-bark-600">{t.value} berry/quả</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <button onClick={() => api.plantTree(sel)} className="btn btn-leaf mt-4 w-full py-3 text-lg">
-          <Icon name="sprout" size={20} />
-          Gieo hạt & trồng!
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-/* ---------- help ---------- */
-
-export function HelpModal({ onClose }: { onClose: () => void }) {
-  return (
-    <Overlay>
-      <div className="panel pop-in max-h-[86vh] w-full max-w-lg overflow-y-auto scroll-cute p-5">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="font-display text-2xl font-extrabold text-bark-900 flex items-center gap-2">
-            <Icon name="book" size={22} className="text-leaf-700" />
-            Luật chơi
-          </h2>
-          <button onClick={onClose} className="btn btn-cream h-9 w-9 shrink-0 rounded-full" aria-label="Đóng">
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-
-        <div className="mt-3 flex flex-col gap-3 font-body text-[13px] font-medium leading-relaxed text-bark-700">
-          <section className="rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
-            <h3 className="mb-1 font-display text-sm font-extrabold text-leaf-800 flex items-center gap-1.5"><Icon name="drop" size={15} />Tưới cây & berry</h3>
-            <ul className="list-disc space-y-0.5 pl-5">
-              <li>Nhiệm vụ <b>Có/Không</b>: 40% rơi 1–3 berry.</li>
-              <li>Nhiệm vụ <b>Đo lường</b>: 70% rơi 3–8 berry.</li>
-              <li><b>Crit 5%</b>: nhân 5 lượng berry rơi.</li>
-              <li><b>Thương xót</b>: 6 lần tưới không rơi → lần sau chắc chắn rơi.</li>
-              <li><b>Streak ≥ 7</b>: +20% tỉ lệ rơi. <b>Phân bón</b>: +25% trong 3 lần tưới.</li>
-            </ul>
-          </section>
-
-          <section className="rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
-            <h3 className="mb-1 font-display text-sm font-extrabold text-leaf-800 flex items-center gap-1.5"><Icon name="star" size={15} />KN & cấp cây</h3>
-            <ul className="list-disc space-y-0.5 pl-5">
-              <li>Có/Không ~12 KN · Đo lường ~16 KN (±2).</li>
-              <li>Trần <b>120 KN/ngày</b> — quá trần chỉ còn 20%, berry vẫn rơi đủ.</li>
-              <li>Cây có 10 cấp: cấp 8 nở hoa, cấp 9 đậu quả non, cấp 10 chín.</li>
-            </ul>
-          </section>
-
-          <section className="rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
-            <h3 className="mb-1 font-display text-sm font-extrabold text-leaf-800 flex items-center gap-1.5"><Icon name="basket" size={15} />Thu hoạch & sau đó</h3>
-            <ul className="list-disc space-y-0.5 pl-5">
-              <li>Cấp 10: nhấn hái từng quả (8–9 quả), mỗi quả 10–16 berry, crit ×3.</li>
-              <li>Thưởng mùa: <b>20 + 2×streak</b> berry.</li>
-              <li>Sau thu hoạch: chọn gieo giống mới — Cam, Anh Đào, Táo Đỏ (mở khóa dần).</li>
-            </ul>
-          </section>
-
-          <section className="rounded-xl border-2 border-bark-700/25 bg-cream-100 p-3">
-            <h3 className="mb-1 font-display text-sm font-extrabold text-leaf-800 flex items-center gap-1.5"><Icon name="moon" size={15} />Qua ngày & streak</h3>
-            <ul className="list-disc space-y-0.5 pl-5">
-              <li>Nhấn <b>Đi ngủ</b> để sang ngày mới với bộ nhiệm vụ mới.</li>
-              <li>Xong hết nhiệm vụ: +1 streak, thưởng 5–30 berry.</li>
-              <li>Lỡ dở: mất streak, cây héo nhẹ một ngày — <b>Băng bảo vệ</b> sẽ đỡแทน. Nhẹ nhàng thôi, mai mình làm lại!</li>
-            </ul>
-          </section>
-        </div>
-
-        <button onClick={onClose} className="btn btn-leaf mt-4 w-full py-2.5 text-base">
-          <Icon name="check" size={17} />
-          Đã hiểu, ra vườn thôi!
-        </button>
-      </div>
-    </Overlay>
   );
 }

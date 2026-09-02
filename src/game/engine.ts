@@ -1,7 +1,15 @@
 /* Cây Cam Nhỏ — procedural canvas garden engine. All art drawn in code. */
 
+import type { CyclePhase, FruitType } from "./types";
+
+export interface TreeLook {
+  fruit: string; fruitDark: string; glow: string; leaf: string; leafLight: string;
+}
 export interface SkinLook { hair: string; shirt: string; hat: string | null }
-export interface DecorLook { fence: boolean; lantern: boolean; mushrooms: boolean; flowers: boolean }
+export interface DecorLook {
+  fence: boolean; lantern: boolean; mushrooms: boolean; flowers: boolean;
+  pond: boolean; scarecrow: boolean; swing: boolean;
+}
 export interface DropInfo { amount: number; crit: boolean }
 
 interface Particle {
@@ -12,7 +20,7 @@ interface Particle {
 }
 
 interface Floater { x: number; y: number; text: string; color: string; t: number; life: number; size: number; sub?: string }
-interface Fruit { dx: number; dy: number; phase: number; picked: boolean }
+interface Fruit { dx: number; dy: number; phase: number; picked: boolean; type: FruitType }
 interface Cloud { x: number; y: number; s: number; v: number }
 interface Ring { x: number; y: number; r: number; max: number; t: number }
 
@@ -21,11 +29,14 @@ const FRUIT_SPOTS: [number, number][] = [
   [0.3, 0.18], [-0.06, 0.12], [-0.52, 0.36], [0.1, 0.42],
 ];
 
+// index = level-1; cây lớn tới cấp 16 rồi giữ nguyên, chỉ thêm hào quang
 const STAGE_DIMS = [
   { h: 16, w: 5, r: 0 }, { h: 30, w: 6, r: 0 }, { h: 46, w: 9, r: 27 },
   { h: 62, w: 11, r: 39 }, { h: 78, w: 13, r: 51 }, { h: 94, w: 15, r: 63 },
   { h: 110, w: 17, r: 75 }, { h: 122, w: 18, r: 83 }, { h: 132, w: 19, r: 89 },
   { h: 142, w: 20, r: 95 },
+  { h: 150, w: 21, r: 101 }, { h: 157, w: 22, r: 106 }, { h: 163, w: 22, r: 110 },
+  { h: 168, w: 23, r: 113 }, { h: 172, w: 23, r: 115 }, { h: 175, w: 24, r: 117 },
 ];
 
 export class GardenEngine {
@@ -34,14 +45,15 @@ export class GardenEngine {
   private W = 800; private H = 520; private u = 1;
   private raf = 0; private last = 0; private time = 0;
   private running = false;
+  private groundK = 0.84;
 
   level = 1;
-  treeType = "cam";
   fruit = "#ff8c2e"; fruitDark = "#c96a1e"; glowBase = "rgba(255,140,46,";
   leafA = "#3e9142"; leafB = "#58b84e";
   wilted = false;
   skin: SkinLook = { hair: "#7a4a21", shirt: "#58b84e", hat: null };
-  decor: DecorLook = { fence: false, lantern: false, mushrooms: false, flowers: false };
+  decor: DecorLook = { fence: false, lantern: false, mushrooms: false, flowers: false, pond: false, scarecrow: false, swing: false };
+  private cyclePhase: "none" | "bloom" | "green" = "none";
 
   private fruits: Fruit[] = [];
   private particles: Particle[] = [];
@@ -50,7 +62,10 @@ export class GardenEngine {
   private rings: Ring[] = [];
   private grass: { x: number; y: number; h: number; p: number; c: string }[] = [];
   private daisies: { x: number; y: number; c: string }[] = [];
+  private fireflies: { t: number; s: number; p: number }[] = [];
   private butterflies = [{ t: 2.1, s: 26, yb: 0.3, c: "#ffa733" }, { t: 7.7, s: 19, yb: 0.42, c: "#9c8ce8" }];
+  private fog = 100;
+  private landmarks: Set<string> = new Set();
 
   private chibiMode: "idle" | "water" | "celebrate" | "sleep" = "idle";
   private chibiT = 0;
@@ -58,12 +73,11 @@ export class GardenEngine {
   private treePulse = 0;
   private wetT = 0;
   private shake = 0;
-  private nightT = 1;
   private blinkT = 0;
   private geom = { tx: 0, gy: 0, cx: 0, cy: 0, r: 60 };
   private wiltLeavesSpawned = false;
 
-  onFruitPick: ((x: number, y: number) => void) | null = null;
+  onFruitPick: ((index: number, x: number, y: number) => void) | null = null;
 
   private onDown = (e: PointerEvent) => this.pointerDown(e);
   private onMove = (e: PointerEvent) => this.pointerMove(e);
@@ -105,13 +119,14 @@ export class GardenEngine {
     this.canvas.height = Math.round(h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.u = Math.max(0.58, Math.min(1.15, Math.min(this.H / 560, this.W / 820)));
+    // màn hình dọc (mobile): đẩy mặt đất lên cao để không bị UI che
+    this.groundK = this.H > this.W ? 0.76 : 0.84;
     this.seedGround();
   }
 
   private seedGround() {
     this.grass = [];
     this.daisies = [];
-    const gy = this.H * 0.84;
     for (let i = 0; i < 70; i++) {
       this.grass.push({
         x: Math.random() * this.W,
@@ -123,18 +138,28 @@ export class GardenEngine {
     }
     const colors = ["#fff9ea", "#ffa3a3", "#ffc46b"];
     for (let i = 0; i < 7; i++) {
-      this.daisies.push({ x: Math.random() * this.W, y: gy + Math.random() * (this.H - gy) * 0.8, c: colors[i % 3] });
+      this.daisies.push({ x: Math.random() * this.W, y: this.H * this.groundK + Math.random() * (this.H - this.H * this.groundK) * 0.8, c: colors[i % 3] });
     }
     this.clouds = [];
     for (let i = 0; i < 4; i++) {
       this.clouds.push({ x: Math.random() * this.W, y: this.H * (0.08 + i * 0.07), s: (0.7 + Math.random() * 0.6) * this.u, v: 6 + i * 4 });
     }
+    this.fireflies = [];
+    for (let i = 0; i < 9; i++) {
+      this.fireflies.push({ t: Math.random() * 10, s: 10 + Math.random() * 14, p: Math.random() * Math.PI * 2 });
+    }
   }
 
   /* ---------- public API ---------- */
 
-  setTree(type: string, def: { fruit: string; fruitDark: string; glow: string; leaf: string; leafLight: string }) {
-    this.treeType = type;
+  getView(): { w: number; h: number; u: number; tx: number; ty: number; r: number } {
+    return {
+      w: this.W, h: this.H, u: this.u,
+      tx: this.geom.cx, ty: this.geom.cy, r: this.geom.r,
+    };
+  }
+
+  setTree(def: TreeLook) {
     this.fruit = def.fruit; this.fruitDark = def.fruitDark; this.glowBase = def.glow;
     this.leafA = def.leaf; this.leafB = def.leafLight;
   }
@@ -144,37 +169,65 @@ export class GardenEngine {
     if (level < 10) this.fruits = [];
   }
 
+  unpickedCount(): number {
+    return this.fruits.filter((f) => !f.picked).length;
+  }
+
   syncFruits(remaining: number, count: number) {
     if (this.fruits.length !== count) {
-      this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({ dx: s[0], dy: s[1], phase: i * 0.9, picked: false }));
+      this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({ dx: s[0], dy: s[1], phase: i * 0.9, picked: false, type: "normal" as FruitType }));
     }
     const pickedCount = count - remaining;
     this.fruits.forEach((f, i) => { f.picked = i < pickedCount; });
   }
 
-  setWilted(w: boolean) {
-    if (this.wilted === w) return;
-    this.wilted = w;
-    this.wiltLeavesSpawned = false;
+  /** Đặt danh sách quả theo manifest loại (thường / siêu bự / hộp quà). */
+  setFruitManifest(manifest: FruitType[], remaining: number) {
+    const count = manifest.length;
+    this.fruits = FRUIT_SPOTS.slice(0, count).map((s, i) => ({
+      dx: s[0], dy: s[1], phase: i * 0.9, picked: false, type: manifest[i] ?? "normal",
+    }));
+    const pickedCount = count - remaining;
+    this.fruits.forEach((f, i) => { f.picked = i < pickedCount; });
   }
 
-  unpickedCount(): number {
-    return this.fruits.reduce((n, f) => n + (f.picked ? 0 : 1), 0);
-  }
-
-  setSkin(s: SkinLook) { this.skin = s; }
-  setDecor(d: DecorLook) { this.decor = d; }
+  setCyclePhase(p: "none" | "bloom" | "green") { this.cyclePhase = p; }
 
   resetTree() {
     this.level = 1;
     this.fruits = [];
+    this.cyclePhase = "none";
     this.particles = [];
     this.floaters = [];
     this.rings = [];
-    this.chibiMode = "idle";
     this.wilted = false;
-    this.wetT = 0;
+    this.fog = 100;
+    this.landmarks = new Set();
   }
+
+  setWilted(w: boolean) {
+    if (w && !this.wilted) this.wiltLeavesSpawned = false;
+    this.wilted = w;
+  }
+
+  setFog(f: number) { this.fog = Math.max(0, Math.min(100, f)); }
+
+  setDiscovered(ids: string[]) { this.landmarks = new Set(ids); }
+
+  revealFx() {
+    const g = this.geom;
+    this.rings.push({ x: g.cx, y: g.cy - 30 * this.u, r: 20 * this.u, max: 280 * this.u, t: 0 });
+    for (let i = 0; i < 28; i++) {
+      this.sparkAt(
+        this.W * (0.12 + Math.random() * 0.76),
+        this.H * (0.2 + Math.random() * 0.45),
+        Math.random() > 0.4 ? "#ffe28a" : "#fff9ea"
+      );
+    }
+  }
+
+  setSkin(s: SkinLook) { this.skin = s; }
+  setDecor(d: DecorLook) { this.decor = d; }
 
   water() {
     this.chibiMode = "water";
@@ -210,7 +263,6 @@ export class GardenEngine {
       this.shake = 7;
       for (let i = 0; i < 14; i++) this.sparkAt(g.cx, g.cy, "#ffd93d");
     }
-    const gy = this.H * 0.84;
     this.floaters.push({
       x: g.cx - 40 * this.u, y: g.cy + g.r * 0.2,
       text: drop.crit ? `+${drop.amount} CRIT!` : `+${drop.amount}`,
@@ -218,7 +270,6 @@ export class GardenEngine {
       t: 0, life: 1.4, size: drop.crit ? 24 : 18,
       sub: "berry",
     });
-    void gy;
   }
 
   sparkAt(x: number, y: number, color: string) {
@@ -272,10 +323,6 @@ export class GardenEngine {
     this.floaters.push({ x, y: y - 14, text, color, t: 0, life: 1.1, size: big ? 22 : 16, sub: "berry" });
   }
 
-  nightPulse() { this.nightT = 0; }
-
-  sleepChibi() { this.chibiMode = "sleep"; this.chibiT = 2.2; }
-
   /* ---------- input ---------- */
 
   private toLocal(e: PointerEvent) {
@@ -284,25 +331,28 @@ export class GardenEngine {
   }
 
   private pointerDown(e: PointerEvent) {
-    if (this.level < 10) return;
+    if (this.level < 10 || this.fruits.length === 0) return;
     const { x, y } = this.toLocal(e);
     const g = this.geom;
-    for (const f of this.fruits) {
+    for (let idx = 0; idx < this.fruits.length; idx++) {
+      const f = this.fruits[idx];
       if (f.picked) continue;
       const fx = g.cx + f.dx * g.r * 0.78;
       const fy = g.cy + f.dy * g.r * 0.78;
-      if (Math.hypot(x - fx, y - fy) < 19 * this.u) {
+      const radius = (f.type === "giant" ? 24 : 19) * this.u;
+      if (Math.hypot(x - fx, y - fy) < radius) {
         f.picked = true;
-        for (let i = 0; i < 8; i++) {
+        const burst = f.type === "giant" ? 16 : f.type === "gift" ? 12 : 8;
+        for (let i = 0; i < burst; i++) {
           this.particles.push({
             x: fx, y: fy, vx: (Math.random() - 0.5) * 240 * this.u, vy: -(40 + Math.random() * 160) * this.u,
             g: 500 * this.u, life: 0, maxLife: 0.9, size: (2.5 + Math.random() * 3) * this.u,
-            color: Math.random() > 0.4 ? this.fruit : "#ffd93d", kind: "dot",
+            color: f.type === "gift" ? "#9c8ce8" : Math.random() > 0.4 ? this.fruit : "#ffd93d", kind: "dot",
             rot: 0, vr: 0, bounced: 0,
           });
         }
         this.rings.push({ x: fx, y: fy, r: 4 * this.u, max: 44 * this.u, t: 0 });
-        this.onFruitPick?.(fx, fy);
+        this.onFruitPick?.(idx, fx, fy);
         return;
       }
     }
@@ -328,6 +378,7 @@ export class GardenEngine {
       if (c.x > this.W + 90) c.x = -90;
     }
     for (const b of this.butterflies) b.t += dt;
+    for (const f of this.fireflies) f.t += dt;
 
     this.blinkT += dt;
     if (this.blinkT > 3.4) this.blinkT = 0;
@@ -366,7 +417,6 @@ export class GardenEngine {
     this.treePulse = Math.max(0, this.treePulse - dt * 1.4);
     this.wetT = Math.max(0, this.wetT - dt * 0.25);
     this.shake = Math.max(0, this.shake - dt * 14);
-    if (this.nightT < 1) this.nightT = Math.min(1, this.nightT + dt / 1.5);
 
     this.particles = this.particles.filter((p) => {
       p.life += dt;
@@ -374,8 +424,9 @@ export class GardenEngine {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
-      if (p.kind === "berry" && p.y > this.H * 0.86 && p.vy > 0 && p.bounced < 2) {
-        p.vy *= -0.45; p.vx *= 0.7; p.y = this.H * 0.86; p.bounced++;
+      const groundY = this.H * (this.groundK + 0.02);
+      if (p.kind === "berry" && p.y > groundY && p.vy > 0 && p.bounced < 2) {
+        p.vy *= -0.45; p.vx *= 0.7; p.y = groundY; p.bounced++;
       }
       return p.life < p.maxLife && p.y < this.H + 40;
     });
@@ -388,7 +439,7 @@ export class GardenEngine {
   /* ---------- draw ---------- */
 
   private draw() {
-    const { ctx, W, H, u } = this;
+    const { ctx, W, H } = this;
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     if (this.shake > 0) {
@@ -398,38 +449,38 @@ export class GardenEngine {
     this.drawSky();
     this.drawClouds();
     this.drawHills();
+    this.drawLandmarksBack();
     if (this.decor.fence) this.drawFence();
     this.drawGround();
+    this.drawStream();
     if (this.decor.mushrooms) this.drawMushrooms();
     if (this.decor.flowers) this.drawFlowerBed();
 
-    // tree + geometry
-    const gy = H * 0.84;
+    const gy = H * this.groundK;
     const tx = W * 0.4;
-    const dim = STAGE_DIMS[Math.min(9, Math.max(0, this.level - 1))];
-    const sway = Math.sin(this.time * 1.3) * 2.4 * u * (this.level / 10 + 0.25);
+    const dim = STAGE_DIMS[Math.min(STAGE_DIMS.length - 1, Math.max(0, this.level - 1))];
+    const sway = Math.sin(this.time * 1.3) * 2.4 * this.u * (Math.min(this.level, 16) / 10 + 0.25);
     const pulse = 1 + this.treePulse * 0.045;
-    const r = dim.r * u * pulse * (this.wilted ? 0.965 : 1);
+    const r = dim.r * this.u * pulse * (this.wilted ? 0.965 : 1);
     const cx = tx + sway;
-    const cy = gy - dim.h * u - r * 0.5 + (this.wilted ? 5 * u : 0);
+    const cy = gy - dim.h * this.u - r * 0.5 + (this.wilted ? 5 * this.u : 0);
     this.geom = { tx, gy, cx, cy, r };
 
+    if (this.level >= 13) this.drawAncientAura(cx, cy, r);
     this.drawTreeShadow();
-    this.drawTree(tx, gy, cx, cy, r, dim.h * u, dim.w * u);
-    if (this.level === 10) this.drawFruits();
+    this.drawTree(tx, gy, cx, cy, r, dim.h * this.u, dim.w * this.u);
+    if (this.level >= 10 && this.fruits.length > 0) this.drawFruits();
+    if (this.level >= 13 || this.landmarks.has("cottage")) this.drawFireflies();
 
+    if (this.decor.pond) this.drawPond();
+    if (this.decor.scarecrow) this.drawScarecrow();
+    if (this.decor.swing) this.drawSwing();
     if (this.decor.lantern) this.drawLantern();
     this.drawChibi();
     this.drawParticles();
     this.drawRings();
     this.drawFloaters();
-
-    // night overlay
-    if (this.nightT < 1) {
-      const a = Math.sin(this.nightT * Math.PI) * 0.72;
-      ctx.fillStyle = `rgba(16,26,58,${a.toFixed(3)})`;
-      ctx.fillRect(-10, -10, W + 20, H + 20);
-    }
+    this.drawFog();
     ctx.restore();
   }
 
@@ -442,7 +493,6 @@ export class GardenEngine {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // sun
     const sx = W * 0.84, sy = H * 0.16;
     const glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, 90 * u);
     glow.addColorStop(0, "rgba(255,217,61,0.5)");
@@ -473,7 +523,7 @@ export class GardenEngine {
   }
 
   private drawClouds() {
-    const { ctx, u } = this;
+    const { ctx } = this;
     for (const c of this.clouds) {
       ctx.save();
       ctx.translate(c.x, c.y);
@@ -487,7 +537,6 @@ export class GardenEngine {
       ctx.fill();
       ctx.restore();
     }
-    void u;
   }
 
   private drawHills() {
@@ -521,10 +570,9 @@ export class GardenEngine {
     ctx.lineTo(W, H); ctx.lineTo(0, H);
     ctx.closePath(); ctx.fill();
 
-    // dirt path under tree
     ctx.fillStyle = "#c68d52";
     ctx.beginPath();
-    ctx.ellipse(this.geom.tx, H * 0.875, 120 * this.u, 22 * this.u, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.geom.tx, H * (this.groundK + 0.035), 120 * this.u, 22 * this.u, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#a9713a";
     ctx.lineWidth = 2.5 * this.u;
@@ -533,7 +581,7 @@ export class GardenEngine {
     if (this.wetT > 0) {
       ctx.fillStyle = `rgba(74,48,24,${(this.wetT * 0.4).toFixed(3)})`;
       ctx.beginPath();
-      ctx.ellipse(this.geom.tx, H * 0.865, 70 * this.u, 13 * this.u, 0, 0, Math.PI * 2);
+      ctx.ellipse(this.geom.tx, H * (this.groundK + 0.025), 70 * this.u, 13 * this.u, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -582,8 +630,6 @@ export class GardenEngine {
     ctx.fillStyle = "#a9713a";
     ctx.fillRect(0, y + 6 * u, W, 6 * u);
     ctx.fillRect(0, y + 20 * u, W, 6 * u);
-    ctx.strokeRect(-2, y + 6 * u, W + 4, 6 * u);
-    ctx.strokeRect(-2, y + 20 * u, W + 4, 6 * u);
   }
 
   private drawTreeShadow() {
@@ -591,8 +637,40 @@ export class GardenEngine {
     const g = this.geom;
     ctx.fillStyle = "rgba(30,77,40,0.3)";
     ctx.beginPath();
-    ctx.ellipse(g.tx, g.gy + 6 * u, (30 + this.level * 8) * u, 10 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(g.tx, g.gy + 6 * u, (30 + Math.min(this.level, 16) * 8) * u, 10 * u, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  private drawAncientAura(cx: number, cy: number, r: number) {
+    const { ctx, u } = this;
+    const k = Math.min(1, (this.level - 12) / 4);
+    const pulse = 1 + Math.sin(this.time * 1.6) * 0.05;
+    const rad = r * 1.5 * pulse;
+    const glow = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, rad);
+    glow.addColorStop(0, `rgba(255,217,61,${(0.28 * k).toFixed(3)})`);
+    glow.addColorStop(1, "rgba(255,217,61,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+    void u;
+  }
+
+  private drawFireflies() {
+    const { ctx, u } = this;
+    const g = this.geom;
+    for (const f of this.fireflies) {
+      const a = f.t * 0.7 + f.p;
+      const x = g.cx + Math.cos(a) * f.s * 4 * u;
+      const y = g.cy + Math.sin(a * 1.3) * f.s * 2.4 * u;
+      const tw = 0.5 + Math.sin(f.t * 4 + f.p) * 0.5;
+      ctx.fillStyle = `rgba(255,232,115,${(tw * 0.9).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 2 * u, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,232,115,${(tw * 0.25).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 6 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private drawTree(tx: number, gy: number, cx: number, cy: number, r: number, th: number, tw: number) {
@@ -603,7 +681,6 @@ export class GardenEngine {
     const barkInk = "#5c3a1e";
 
     if (lvl <= 2) {
-      // sprout
       ctx.fillStyle = "#a9713a";
       ctx.beginPath();
       ctx.ellipse(tx, gy, 20 * u, 8 * u, 0, Math.PI, 0);
@@ -635,7 +712,6 @@ export class GardenEngine {
       return;
     }
 
-    // trunk
     ctx.fillStyle = bark;
     ctx.strokeStyle = barkInk;
     ctx.lineWidth = 2.6 * u;
@@ -661,7 +737,6 @@ export class GardenEngine {
       ctx.stroke();
     }
 
-    // canopy blobs
     const blobs: [number, number, number][] =
       lvl <= 3 ? [[0, 0, 1]] :
       lvl <= 5 ? [[0, 0, 1], [-0.62, 0.22, 0.68], [0.62, 0.22, 0.68]] :
@@ -675,7 +750,6 @@ export class GardenEngine {
       ctx.arc(cx + ox * r, cy + oy * r, r * s, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
     }
-    // highlight
     ctx.fillStyle = this.leafB;
     ctx.beginPath();
     ctx.arc(cx - r * 0.22, cy - r * 0.28, r * 0.62, 0, Math.PI * 2);
@@ -683,6 +757,16 @@ export class GardenEngine {
     ctx.beginPath();
     ctx.arc(cx + r * 0.3, cy - r * 0.42, r * 0.3, 0, Math.PI * 2);
     ctx.fill();
+
+    // cổ thụ: tán ánh vàng nhẹ
+    if (lvl >= 13) {
+      ctx.fillStyle = `rgba(255,217,61,${Math.min(0.22, (lvl - 12) * 0.05).toFixed(3)})`;
+      for (const [ox, oy, s] of blobs) {
+        ctx.beginPath();
+        ctx.arc(cx + ox * r, cy + oy * r, r * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     if (this.wilted) {
       ctx.fillStyle = "rgba(139,90,43,0.18)";
@@ -693,8 +777,8 @@ export class GardenEngine {
       }
     }
 
-    // flowers at level 8
-    if (lvl === 8) {
+    // nở hoa: ở cấp 8, hoặc trong pha "bloom" của chu kỳ sau thu hoạch
+    if (lvl === 8 || (lvl >= 10 && this.cyclePhase === "bloom")) {
       const spots: [number, number][] = [[-0.4, -0.3], [0.25, -0.5], [0.5, 0.1], [-0.1, 0.25], [-0.55, 0.15], [0.1, -0.1], [0.45, -0.25]];
       for (const [ox, oy] of spots) {
         const fx = cx + ox * r, fy = cy + oy * r;
@@ -712,8 +796,8 @@ export class GardenEngine {
       }
     }
 
-    // green fruits at level 9
-    if (lvl === 9) {
+    // quả xanh: ở cấp 9, hoặc trong pha "green" của chu kỳ sau thu hoạch
+    if (lvl === 9 || (lvl >= 10 && this.cyclePhase === "green")) {
       for (let i = 0; i < 6; i++) {
         const [ox, oy] = FRUIT_SPOTS[i];
         ctx.fillStyle = "#a5dd8a";
@@ -733,26 +817,83 @@ export class GardenEngine {
       if (f.picked) continue;
       const fx = g.cx + f.dx * g.r * 0.78;
       const fy = g.cy + f.dy * g.r * 0.78 + Math.sin(this.time * 2 + f.phase) * 1.6 * u;
-      const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, 26 * u);
-      glow.addColorStop(0, `${this.glowBase}0.5)`);
-      glow.addColorStop(1, `${this.glowBase}0)`);
+
+      if (f.type === "gift") {
+        // hộp quà bí ẩn
+        const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, 30 * u);
+        glow.addColorStop(0, "rgba(156,140,232,0.55)");
+        glow.addColorStop(1, "rgba(156,140,232,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(fx - 30 * u, fy - 30 * u, 60 * u, 60 * u);
+        const wob = Math.sin(this.time * 4 + f.phase) * 0.08;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(wob);
+        ctx.fillStyle = "#9c8ce8";
+        ctx.strokeStyle = "#5d4fc0";
+        ctx.lineWidth = 2.2 * u;
+        ctx.beginPath();
+        ctx.roundRect(-9 * u, -8 * u, 18 * u, 16 * u, 3 * u);
+        ctx.fill(); ctx.stroke();
+        // nắp + ruy băng
+        ctx.fillStyle = "#c0b5f2";
+        ctx.beginPath();
+        ctx.roundRect(-10.5 * u, -11 * u, 21 * u, 6 * u, 2.5 * u);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#ffd93d";
+        ctx.fillRect(-2 * u, -11 * u, 4 * u, 19 * u);
+        ctx.strokeRect(-2 * u, -11 * u, 4 * u, 19 * u);
+        // dấu hỏi
+        ctx.fillStyle = "#fff9ea";
+        ctx.font = `800 ${Math.round(9 * u)}px "Baloo 2", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText("?", 0, 4.5 * u);
+        ctx.textAlign = "left";
+        ctx.restore();
+        continue;
+      }
+
+      const isGiant = f.type === "giant";
+      const rad = (isGiant ? 15 : 10) * u;
+      const glowR = (isGiant ? 38 : 26) * u;
+      const glow = ctx.createRadialGradient(fx, fy, 2, fx, fy, glowR);
+      glow.addColorStop(0, isGiant ? "rgba(255,217,61,0.6)" : `${this.glowBase}0.5)`);
+      glow.addColorStop(1, isGiant ? "rgba(255,217,61,0)" : `${this.glowBase}0)`);
       ctx.fillStyle = glow;
-      ctx.fillRect(fx - 26 * u, fy - 26 * u, 52 * u, 52 * u);
+      ctx.fillRect(fx - glowR, fy - glowR, glowR * 2, glowR * 2);
 
       ctx.fillStyle = this.fruit;
       ctx.strokeStyle = this.fruitDark;
       ctx.lineWidth = 2.4 * u;
       ctx.beginPath();
-      ctx.arc(fx, fy, 10 * u, 0, Math.PI * 2);
+      ctx.arc(fx, fy, rad, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.beginPath();
-      ctx.arc(fx - 3.2 * u, fy - 3.5 * u, 2.8 * u, 0, Math.PI * 2);
+      ctx.arc(fx - rad * 0.32, fy - rad * 0.35, rad * 0.28, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#3e9142";
       ctx.beginPath();
-      ctx.ellipse(fx + 3 * u, fy - 10.5 * u, 4.5 * u, 2.2 * u, -0.6, 0, Math.PI * 2);
+      ctx.ellipse(fx + rad * 0.3, fy - rad * 1.05, 4.5 * u, 2.2 * u, -0.6, 0, Math.PI * 2);
       ctx.fill();
+
+      if (isGiant) {
+        // ngôi sao lấp lánh trên quả siêu bự
+        const sp = 0.6 + 0.4 * Math.sin(this.time * 5 + f.phase);
+        ctx.save();
+        ctx.translate(fx + rad * 0.7, fy - rad * 0.8);
+        ctx.scale(sp, sp);
+        ctx.fillStyle = "#ffd93d";
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2;
+          ctx.lineTo(Math.cos(a) * 6 * u, Math.sin(a) * 6 * u);
+          ctx.lineTo(Math.cos(a + Math.PI / 4) * 2.4 * u, Math.sin(a + Math.PI / 4) * 2.4 * u);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
     }
   }
 
@@ -843,6 +984,159 @@ export class GardenEngine {
     }
   }
 
+  private drawPond() {
+    const { ctx, u } = this;
+    const x = this.W * 0.85;
+    const y = this.H * 0.9;
+    const rx = 46 * u;
+    const ry = 17 * u;
+    // mặt nước
+    const g = ctx.createLinearGradient(x, y - ry, x, y + ry);
+    g.addColorStop(0, "#7ed3f2");
+    g.addColorStop(1, "#2f9cd0");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#1e4d6b";
+    ctx.lineWidth = 2.4 * u;
+    ctx.stroke();
+    // gợn sóng
+    ctx.strokeStyle = "rgba(255,255,255,0.65)";
+    ctx.lineWidth = 1.6 * u;
+    for (let i = 0; i < 3; i++) {
+      const rr = (8 + i * 10) * u + Math.sin(this.time * 1.6 + i) * 2 * u;
+      ctx.beginPath();
+      ctx.ellipse(x - 10 * u, y, rr, rr * 0.32, 0, 0.3, Math.PI - 0.3);
+      ctx.stroke();
+    }
+    // cá koi
+    for (let i = 0; i < 2; i++) {
+      const a = this.time * (i === 0 ? 0.9 : -0.7) + i * 2.6;
+      const kx = x + Math.cos(a) * rx * 0.5;
+      const ky = y + Math.sin(a) * ry * 0.4;
+      const dir = -Math.sin(a) * (i === 0 ? 1 : -1);
+      ctx.save();
+      ctx.translate(kx, ky);
+      ctx.scale(dir >= 0 ? 1 : -1, 1);
+      ctx.fillStyle = i === 0 ? "#ff8c2e" : "#fff9ea";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 7 * u, 3.4 * u, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-6 * u, 0);
+      ctx.lineTo(-10 * u, -3 * u);
+      ctx.lineTo(-10 * u, 3 * u);
+      ctx.closePath();
+      ctx.fill();
+      if (i === 1) {
+        ctx.fillStyle = "#ff8c2e";
+        ctx.beginPath();
+        ctx.arc(2 * u, -1 * u, 2 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#2b1a0c";
+      ctx.beginPath();
+      ctx.arc(4 * u, -0.5 * u, 0.8 * u, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    // lá súng
+    ctx.fillStyle = "#4ca854";
+    ctx.beginPath();
+    ctx.ellipse(x + rx * 0.55, y - ry * 0.3, 8 * u, 4 * u, -0.3, 0.4, Math.PI * 1.9);
+    ctx.fill();
+  }
+
+  private drawScarecrow() {
+    const { ctx, u } = this;
+    const x = this.W * 0.1;
+    const y = this.H * 0.82;
+    const sway = Math.sin(this.time * 1.2) * 0.03;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(sway);
+    // cọc
+    ctx.fillStyle = "#8b5a2b";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(-3 * u, -46 * u, 6 * u, 46 * u, 2 * u);
+    ctx.fill(); ctx.stroke();
+    // tay ngang
+    ctx.beginPath();
+    ctx.roundRect(-22 * u, -38 * u, 44 * u, 5 * u, 2 * u);
+    ctx.fill(); ctx.stroke();
+    // đầu rơm
+    ctx.fillStyle = "#f2d16b";
+    ctx.beginPath();
+    ctx.arc(0, -54 * u, 10 * u, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // mũ rơm
+    ctx.fillStyle = "#e8b93d";
+    ctx.beginPath();
+    ctx.ellipse(0, -60 * u, 14 * u, 4 * u, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -64 * u, 8 * u, 5 * u, 0, Math.PI, 0);
+    ctx.fill(); ctx.stroke();
+    // mặt cười
+    ctx.fillStyle = "#5c3a1e";
+    ctx.beginPath();
+    ctx.arc(-3.5 * u, -55 * u, 1.2 * u, 0, Math.PI * 2);
+    ctx.arc(3.5 * u, -55 * u, 1.2 * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 1.6 * u;
+    ctx.beginPath();
+    ctx.arc(0, -52 * u, 3.4 * u, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    // áo
+    ctx.fillStyle = "#e85a5a";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(-11 * u, -36 * u, 22 * u, 20 * u, 4 * u);
+    ctx.fill(); ctx.stroke();
+    // rơm thừa
+    ctx.strokeStyle = "#f2d16b";
+    ctx.lineWidth = 2 * u;
+    for (const [bx, by, aa] of [[-22, -36, 2.4], [22, -36, 0.7], [-8, -16, 1.9], [8, -16, 1.2]] as [number, number, number][]) {
+      ctx.beginPath();
+      ctx.moveTo(bx * u, by * u);
+      ctx.lineTo((bx + Math.cos(aa) * 7) * u, (by + Math.sin(aa) * 7) * u);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  private drawSwing() {
+    const { ctx, u } = this;
+    const g = this.geom;
+    // treo từ cành cây bên phải
+    const ax = g.tx + g.r * 0.85;
+    const ay = g.cy + g.r * 0.1;
+    const len = 58 * u;
+    const ang = Math.sin(this.time * 1.4) * 0.22;
+    const sx = ax + Math.sin(ang) * len;
+    const sy = ay + Math.cos(ang) * len;
+    ctx.strokeStyle = "#7a4a21";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.moveTo(ax - 7 * u, ay);
+    ctx.lineTo(sx - 7 * u, sy);
+    ctx.moveTo(ax + 7 * u, ay);
+    ctx.lineTo(sx + 7 * u, sy);
+    ctx.stroke();
+    // ghế
+    ctx.fillStyle = "#c68d52";
+    ctx.strokeStyle = "#5c3a1e";
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    ctx.roundRect(sx - 13 * u, sy, 26 * u, 6 * u, 3 * u);
+    ctx.fill(); ctx.stroke();
+  }
+
   private drawChibi() {
     const { ctx, u } = this;
     const g = this.geom;
@@ -859,7 +1153,6 @@ export class GardenEngine {
     ctx.strokeStyle = ink;
     ctx.lineCap = "round";
 
-    // legs
     ctx.fillStyle = "#4a6ba8";
     const legSwing = mode === "celebrate" ? Math.sin(t * 14) * 3 * u : 0;
     ctx.beginPath();
@@ -867,7 +1160,6 @@ export class GardenEngine {
     ctx.roundRect(x + 3 * u - legSwing, y - 12 * u, 7 * u, 12 * u, 3 * u);
     ctx.fill(); ctx.stroke();
 
-    // body
     ctx.fillStyle = this.skin.shirt;
     ctx.beginPath();
     ctx.roundRect(x - 13 * u, y - 30 * u, 26 * u, 20 * u, 9 * u);
@@ -876,7 +1168,6 @@ export class GardenEngine {
     const headY = y - 46 * u;
     const armsUp = mode === "celebrate" || mode === "water";
 
-    // arms
     ctx.strokeStyle = ink;
     ctx.fillStyle = "#ffe3c9";
     if (mode === "water") {
@@ -888,7 +1179,6 @@ export class GardenEngine {
       ctx.stroke();
       ctx.strokeStyle = ink;
       ctx.lineWidth = 2.4 * u;
-      // watering can
       const tilt = Math.sin(t * 6) * 0.06 - 0.5;
       ctx.save();
       ctx.translate(x - 27 * u, y - 37 * u);
@@ -907,7 +1197,6 @@ export class GardenEngine {
       ctx.arc(2 * u, -9 * u, 5 * u, Math.PI, 0);
       ctx.stroke();
       ctx.restore();
-      // other arm
       ctx.fillStyle = "#ffe3c9";
       ctx.beginPath();
       ctx.arc(x + 14 * u, y - 24 * u, 4.4 * u, 0, Math.PI * 2);
@@ -931,13 +1220,11 @@ export class GardenEngine {
       }
     }
 
-    // head
     ctx.fillStyle = "#ffe3c9";
     ctx.beginPath();
     ctx.arc(x, headY, 17 * u, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
 
-    // hair dome
     ctx.fillStyle = this.skin.hair;
     ctx.beginPath();
     ctx.arc(x, headY, 17 * u, Math.PI, 0);
@@ -949,7 +1236,6 @@ export class GardenEngine {
     ctx.arc(x + 9 * u, headY + 1 * u, 4.6 * u, 0, Math.PI * 2);
     ctx.fill();
 
-    // hat
     if (this.skin.hat === "hat_frog") {
       ctx.fillStyle = "#58b84e";
       ctx.beginPath();
@@ -983,9 +1269,58 @@ export class GardenEngine {
       ctx.beginPath();
       ctx.ellipse(x + 5 * u, headY - 23 * u, 4 * u, 2 * u, -0.6, 0, Math.PI * 2);
       ctx.fill();
+    } else if (this.skin.hat === "hat_crown") {
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.moveTo(x - 12 * u, headY - 6 * u);
+      ctx.lineTo(x - 12 * u, headY - 16 * u);
+      ctx.lineTo(x - 6 * u, headY - 11 * u);
+      ctx.lineTo(x, headY - 19 * u);
+      ctx.lineTo(x + 6 * u, headY - 11 * u);
+      ctx.lineTo(x + 12 * u, headY - 16 * u);
+      ctx.lineTo(x + 12 * u, headY - 6 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#e85a5a";
+      ctx.beginPath();
+      ctx.arc(x, headY - 10 * u, 1.8 * u, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (this.skin.hat === "hat_wizard") {
+      ctx.fillStyle = "#5d4fc0";
+      ctx.beginPath();
+      ctx.moveTo(x, headY - 32 * u);
+      ctx.lineTo(x - 12 * u, headY - 8 * u);
+      ctx.lineTo(x + 12 * u, headY - 8 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(x, headY - 8 * u, 16 * u, 3.4 * u, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.arc(x - 2 * u, headY - 18 * u, 1.6 * u, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (this.skin.hat === "hat_ribbon") {
+      ctx.fillStyle = "#e86fa0";
+      const rx = x + 10 * u, ry = headY - 12 * u;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 8 * u, ry - 5 * u);
+      ctx.lineTo(rx - 8 * u, ry + 5 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx + 8 * u, ry - 5 * u);
+      ctx.lineTo(rx + 8 * u, ry + 5 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffa3c0";
+      ctx.beginPath();
+      ctx.arc(rx, ry, 3 * u, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
     }
 
-    // face
     const blink = this.blinkT > 3.2 && this.blinkT < 3.35 && mode !== "sleep";
     ctx.fillStyle = ink;
     if (mode === "sleep") {
@@ -995,7 +1330,6 @@ export class GardenEngine {
         ctx.arc(x + dir * 6.5 * u, headY + 3 * u, 3 * u, 0.15 * Math.PI, 0.85 * Math.PI);
         ctx.stroke();
       }
-      // zzz
       const zt = (t % 2) / 2;
       ctx.globalAlpha = 1 - zt;
       ctx.font = `800 ${Math.round(11 * u)}px "Baloo 2", sans-serif`;
@@ -1033,7 +1367,6 @@ export class GardenEngine {
       ctx.stroke();
     }
 
-    // blush
     ctx.fillStyle = "rgba(255,163,163,0.75)";
     ctx.beginPath();
     ctx.arc(x - 11 * u, headY + 7 * u, 2.6 * u, 0, Math.PI * 2);
@@ -1105,6 +1438,240 @@ export class GardenEngine {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+
+  /* ---------- narrative: landmarks & fog ---------- */
+
+  private drawLandmarksBack() {
+    const { ctx, W, H, u } = this;
+    const ink = "#3b2412";
+
+    // cầu vồng — sau cùng của bầu trời
+    if (this.landmarks.has("rainbow")) {
+      const cx = W * 0.5;
+      const cy = H * 0.8;
+      const R = Math.min(W, H) * 0.66;
+      const cols = ["rgba(232,90,90,0.4)", "rgba(255,167,51,0.4)", "rgba(255,217,61,0.4)", "rgba(122,203,95,0.4)", "rgba(79,184,232,0.4)", "rgba(156,140,232,0.4)"];
+      ctx.lineCap = "round";
+      cols.forEach((c, i) => {
+        ctx.strokeStyle = c;
+        ctx.lineWidth = 7 * u;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R - i * 7.5 * u, Math.PI * 1.06, Math.PI * 1.94);
+        ctx.stroke();
+      });
+    }
+
+    // cổng đá cổ
+    if (this.landmarks.has("gate")) {
+      const x = W * 0.68;
+      const y = H * 0.63;
+      ctx.fillStyle = "#9aa5ad";
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.roundRect(x - 26 * u, y - 40 * u, 11 * u, 42 * u, 3 * u);
+      ctx.roundRect(x + 15 * u, y - 40 * u, 11 * u, 42 * u, 3 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#8a959d";
+      ctx.beginPath();
+      ctx.roundRect(x - 32 * u, y - 50 * u, 64 * u, 12 * u, 4 * u);
+      ctx.fill(); ctx.stroke();
+      // rêu + ký tự phát sáng
+      ctx.fillStyle = "#58b84e";
+      ctx.beginPath();
+      ctx.ellipse(x - 24 * u, y - 2 * u, 6 * u, 3 * u, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 22 * u, y - 40 * u, 5 * u, 2.6 * u, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const glow = 0.5 + 0.5 * Math.sin(this.time * 2.2);
+      ctx.fillStyle = `rgba(255,217,61,${(0.45 + 0.5 * glow).toFixed(3)})`;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x - 10 * u + i * 10 * u, y - 44 * u, 1.8 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // cối xay gió
+    if (this.landmarks.has("windmill")) {
+      const x = W * 0.095;
+      const y = H * 0.615;
+      ctx.fillStyle = "#d9bd85";
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.moveTo(x - 13 * u, y + 34 * u);
+      ctx.lineTo(x - 7 * u, y - 12 * u);
+      ctx.lineTo(x + 7 * u, y - 12 * u);
+      ctx.lineTo(x + 13 * u, y + 34 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#a9713a";
+      ctx.beginPath();
+      ctx.moveTo(x - 10 * u, y - 10 * u);
+      ctx.lineTo(x, y - 26 * u);
+      ctx.lineTo(x + 10 * u, y - 10 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // cánh quạt xoay
+      const hubY = y - 6 * u;
+      ctx.save();
+      ctx.translate(x, hubY);
+      ctx.rotate(this.time * 0.9);
+      ctx.fillStyle = "#fff3dc";
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.roundRect(-3 * u, -34 * u, 6 * u, 32 * u, 3 * u);
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = "#7a4a21";
+      ctx.beginPath();
+      ctx.arc(x, hubY, 4 * u, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // ngôi nhà gỗ
+    if (this.landmarks.has("cottage")) {
+      const x = W * 0.885;
+      const y = H * 0.655;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2.2 * u;
+      // khói bếp
+      for (let i = 0; i < 3; i++) {
+        const st = (this.time * 0.5 + i * 0.33) % 1;
+        ctx.fillStyle = `rgba(230,230,230,${(0.5 * (1 - st)).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x + 14 * u + st * 4 * u, y - 34 * u - st * 26 * u, (3 + st * 4) * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#8b5a2b";
+      ctx.beginPath();
+      ctx.roundRect(x + 10 * u, y - 34 * u, 8 * u, 16 * u, 2 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ead3a3";
+      ctx.beginPath();
+      ctx.roundRect(x - 24 * u, y - 18 * u, 48 * u, 32 * u, 4 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#a9713a";
+      ctx.beginPath();
+      ctx.moveTo(x - 30 * u, y - 16 * u);
+      ctx.lineTo(x, y - 38 * u);
+      ctx.lineTo(x + 30 * u, y - 16 * u);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // cửa sổ ấm sáng
+      const warm = 0.75 + 0.25 * Math.sin(this.time * 3.1);
+      ctx.fillStyle = `rgba(255,200,90,${warm.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.roundRect(x - 16 * u, y - 10 * u, 12 * u, 11 * u, 2 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - 10 * u, y - 10 * u);
+      ctx.lineTo(x - 10 * u, y + 1 * u);
+      ctx.moveTo(x - 16 * u, y - 4.5 * u);
+      ctx.lineTo(x - 4 * u, y - 4.5 * u);
+      ctx.stroke();
+      // cửa ra vào
+      ctx.fillStyle = "#7a4a21";
+      ctx.beginPath();
+      ctx.roundRect(x + 4 * u, y - 6 * u, 12 * u, 20 * u, [4 * u, 4 * u, 0, 0]);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffd93d";
+      ctx.beginPath();
+      ctx.arc(x + 13 * u, y + 4 * u, 1.4 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawStream() {
+    const { ctx, W, H, u } = this;
+    if (!this.landmarks.has("stream")) return;
+    const y0 = H * 0.745;
+    const xEnd = W * 0.6;
+    ctx.lineCap = "round";
+    // dòng nước
+    ctx.strokeStyle = "#4fb8e8";
+    ctx.lineWidth = 11 * u;
+    ctx.beginPath();
+    ctx.moveTo(-6, y0 + 4 * u);
+    for (let x = 0; x <= xEnd; x += 24 * u) {
+      const wv = Math.sin(x / (34 * u) + this.time * 1.6) * 3 * u;
+      ctx.quadraticCurveTo(x + 12 * u, y0 + wv - 3 * u, x + 24 * u, y0 + 4 * u + Math.sin((x + 24 * u) / (40 * u)) * 2 * u);
+    }
+    ctx.stroke();
+    // lấp lánh chảy
+    ctx.strokeStyle = "rgba(181,232,248,0.95)";
+    ctx.lineWidth = 2.4 * u;
+    for (let i = 0; i < 3; i++) {
+      const sx = ((this.time * 34 * u + i * 90 * u) % (xEnd + 60 * u)) - 30 * u;
+      const sy = y0 + 3 * u + Math.sin(sx / (34 * u) + this.time * 1.6) * 2 * u;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + 14 * u, sy - 1.5 * u);
+      ctx.stroke();
+    }
+    // cầu gỗ bắc qua suối
+    if (this.landmarks.has("bridge")) {
+      const bx = W * 0.3;
+      const by = y0;
+      ctx.fillStyle = "#a9713a";
+      ctx.strokeStyle = "#3b2412";
+      ctx.lineWidth = 2.2 * u;
+      ctx.beginPath();
+      ctx.roundRect(bx - 26 * u, by - 9 * u, 52 * u, 9 * u, 3 * u);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        ctx.moveTo(bx + i * 15 * u, by - 9 * u);
+        ctx.lineTo(bx + i * 15 * u, by);
+      }
+      ctx.stroke();
+      // lan can
+      ctx.strokeStyle = "#7a4a21";
+      ctx.lineWidth = 3 * u;
+      ctx.beginPath();
+      ctx.moveTo(bx - 26 * u, by - 16 * u);
+      ctx.lineTo(bx + 26 * u, by - 16 * u);
+      ctx.stroke();
+      ctx.lineWidth = 2.2 * u;
+      ctx.strokeStyle = "#3b2412";
+      for (const dx of [-22, 0, 22]) {
+        ctx.beginPath();
+        ctx.moveTo(bx + dx * u, by - 9 * u);
+        ctx.lineTo(bx + dx * u, by - 16 * u);
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawFog() {
+    const f = this.fog / 100;
+    if (f <= 0) return;
+    const { ctx, W, H, u } = this;
+    // lớp mờ phủ toàn cảnh
+    ctx.fillStyle = `rgba(226,238,244,${(0.36 * f).toFixed(3)})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    // những dải sương trôi
+    const blobs = [
+      { bx: 0.15, by: 0.55, s: 1.35, sp: 9 },
+      { bx: 0.45, by: 0.4, s: 1.6, sp: 6 },
+      { bx: 0.75, by: 0.58, s: 1.25, sp: 11 },
+      { bx: 0.95, by: 0.33, s: 1.4, sp: 7 },
+      { bx: 0.3, by: 0.74, s: 1.15, sp: 8 },
+    ];
+    for (const b of blobs) {
+      const span = W + 320 * u;
+      const x = ((b.bx * span + this.time * b.sp * u) % span) - 160 * u;
+      const y = b.by * H + Math.sin(this.time * 0.5 + b.bx * 10) * 8 * u;
+      const r = 120 * u * b.s;
+      const g = ctx.createRadialGradient(x, y, r * 0.08, x, y, r);
+      g.addColorStop(0, `rgba(240,247,250,${(0.5 * f).toFixed(3)})`);
+      g.addColorStop(1, "rgba(240,247,250,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
   }
 
   private drawFloaters() {

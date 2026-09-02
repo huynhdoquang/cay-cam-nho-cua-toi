@@ -1,125 +1,115 @@
 import { useEffect, useRef } from "react";
-import type { GameState } from "../game/types";
-import { DECOR_FLAGS, TREES } from "../game/data";
+import type { MutableRefObject } from "react";
 import { GardenEngine } from "../game/engine";
-import { bridge, skinColors } from "../game/useGame";
-import { Icon } from "./icons";
+import { colorOf, CYCLE_BLOOM_DAYS, CYCLE_RIPE_AT, DECOR_FLAGS, FIRST_HARVEST_FRUITS, FRUIT_REGROWTH_COUNT, HAIR_COLORS, SHIRT_COLORS, TREE } from "../game/data";
+import type { GameState } from "../game/types";
 
 interface Props {
   state: GameState;
-  engineRef: React.MutableRefObject<GardenEngine | null>;
-  onEndDay: () => void;
-  onFruitPick: (x: number, y: number) => void;
+  engineRef: MutableRefObject<GardenEngine | null>;
+  onFruitPick: (index: number, x: number, y: number) => void;
 }
 
-export function GardenCanvas({ state, engineRef, onEndDay, onFruitPick }: Props) {
+export function GardenCanvas({ state, engineRef, onFruitPick }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const pickRef = useRef(onFruitPick);
-  pickRef.current = onFruitPick;
+  const fruitCb = useRef(onFruitPick);
+  fruitCb.current = onFruitPick;
 
+  // engine lifecycle
   useEffect(() => {
     const canvas = canvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap) return;
+    if (!canvas) return;
     const engine = new GardenEngine(canvas);
-    engine.onFruitPick = (x, y) => pickRef.current(x, y);
     engineRef.current = engine;
-    bridge.engine = engine;
+    engine.onFruitPick = (index, x, y) => fruitCb.current(index, x, y);
+    engine.setTree(TREE);
     engine.start();
 
-    const ro = new ResizeObserver(() => {
-      const r = wrap.getBoundingClientRect();
-      engine.setSize(r.width, r.height, Math.min(window.devicePixelRatio || 1, 2));
-    });
-    ro.observe(wrap);
-    const r0 = wrap.getBoundingClientRect();
-    engine.setSize(r0.width, r0.height, Math.min(window.devicePixelRatio || 1, 2));
+    let lastW = 0;
+    let lastH = 0;
+    const resize = () => {
+      const r = canvas.parentElement!.getBoundingClientRect();
+      if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return;
+      lastW = r.width;
+      lastH = r.height;
+      engine.setSize(r.width, r.height, Math.min(2, window.devicePixelRatio || 1));
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas.parentElement!);
 
     return () => {
       ro.disconnect();
       engine.destroy();
       engineRef.current = null;
-      bridge.engine = null;
     };
   }, [engineRef]);
 
-  // sync visual state
-  const tree = TREES[state.treeType];
+  // sync engine with game state
   useEffect(() => {
     const e = engineRef.current;
     if (!e) return;
-    e.setTree(state.treeType, tree);
     e.setLevel(state.level);
-    e.setWilted(state.wilted);
-    e.setSkin(skinColors(state));
+    e.setSkin({
+      hair: colorOf(HAIR_COLORS, state.hair, "#7a4a21"),
+      shirt: colorOf(SHIRT_COLORS, state.shirt, "#58b84e"),
+      hat: state.hat,
+    });
     e.setDecor({
       fence: state.owned.includes(DECOR_FLAGS[0]),
       lantern: state.owned.includes(DECOR_FLAGS[1]),
       mushrooms: state.owned.includes(DECOR_FLAGS[2]),
       flowers: state.owned.includes(DECOR_FLAGS[3]),
+      pond: state.owned.includes(DECOR_FLAGS[4]),
+      scarecrow: state.owned.includes(DECOR_FLAGS[5]),
+      swing: state.owned.includes(DECOR_FLAGS[6]),
     });
-    if (state.level >= 10 && e.unpickedCount() !== state.fruitsLeft) e.syncFruits(state.fruitsLeft, tree.fruits);
-  }, [state.treeType, state.level, state.wilted, state.hair, state.shirt, state.hat, state.owned, state.fruitsLeft, engineRef, tree]);
+    if (state.level >= 10 && state.fruitsLeft > 0) {
+      const count = state.harvests === 0 ? FIRST_HARVEST_FRUITS : FRUIT_REGROWTH_COUNT;
+      if (e.unpickedCount() !== state.fruitsLeft) {
+        e.setFruitManifest(state.fruitManifest.length === count ? state.fruitManifest : [], state.fruitsLeft);
+        if (state.fruitManifest.length !== count) e.syncFruits(state.fruitsLeft, count);
+      }
+    }
+    // pha nở hoa / quả xanh của chu kỳ sau thu hoạch
+    const inBloom =
+      state.level >= 10 && state.inCycle && state.harvestPhase === "none" && state.fruitsLeft === 0 &&
+      state.cycleDay >= 1 && state.cycleDay <= CYCLE_BLOOM_DAYS;
+    const inGreen =
+      state.level >= 10 && state.inCycle && state.harvestPhase === "none" && state.fruitsLeft === 0 &&
+      state.cycleDay > CYCLE_BLOOM_DAYS && state.cycleDay < CYCLE_RIPE_AT;
+    e.setCyclePhase(inBloom ? "bloom" : inGreen ? "green" : "none");
+    e.setFog(state.fog);
+    e.setDiscovered(state.discovered.map((d) => d.id));
+  });
 
-  const allDone = state.tasks.length > 0 && state.tasks.every((t) => t.done);
-  const picking = state.harvestPhase === "picking";
+  useEffect(() => {
+    engineRef.current?.setWilted(state.wilted);
+  }, [state.wilted, engineRef]);
 
   return (
-    <div className="panel-dark relative flex-1 min-h-0 p-2 sm:p-2.5">
-      <div ref={wrapRef} className="relative h-full w-full overflow-hidden rounded-[10px]">
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
+    <div className="relative h-full w-full overflow-hidden bg-gradient-to-b from-skyy-400 via-skyy-300 to-leaf-300">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "manipulation" }} />
 
-        {/* harvest hint */}
-        {picking && (
-          <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 pop-in">
-            <div className="chip bg-tang-400 text-bark-900 text-sm sm:text-base shadow-lg">
-              <Icon name="basket" size={17} />
-              Nhấn vào từng quả trên cây để hái!
-              <span className="font-body font-bold">({state.fruitsLeft})</span>
-            </div>
+      {/* gợi ý khi cây chín */}
+      {state.level >= 10 && state.harvestPhase === "picking" && state.fruitsLeft > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 sm:top-3">
+          <div className="floaty chip bg-tang-400 text-bark-900 text-xs shadow-lg sm:text-sm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 10.5h15l-1.6 8a2.5 2.5 0 0 1-2.4 2H8.5a2.5 2.5 0 0 1-2.4-2z" /><path d="M8 10.5 12 4l4 6.5M4.5 14h15" /></svg>
+            Hái {state.fruitsLeft} quả trên cây!
           </div>
-        )}
+        </div>
+      )}
 
-        {/* level tag on garden */}
-        <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5">
-          <div className="chip bg-leaf-300 text-leaf-900 text-xs sm:text-sm">
-            <Icon name="sprout" size={15} />
-            {tree.name} · Cấp {state.level}/10
+      {/* cây héo */}
+      {state.wilted && (
+        <div className="pointer-events-none absolute left-1/2 top-12 z-10 -translate-x-1/2 sm:top-14">
+          <div className="chip bg-skyy-300 text-[#14507a] text-[11px] shadow-lg sm:text-xs">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.5S6 10 6 14.5a6 6 0 0 0 12 0C18 10 12 3.5 12 3.5z" /></svg>
+            Cây buồn vì hôm qua… tưới cây đều nhé!
           </div>
-          {state.fertCharges > 0 && (
-            <div className="chip bg-lime-200 text-lime-900 text-xs">
-              <Icon name="fertilizer" size={14} />
-              Phân bón ×{state.fertCharges}
-            </div>
-          )}
-          {state.wilted && (
-            <div className="chip bg-cream-300 text-bark-700 text-xs">
-              <Icon name="leaf" size={14} />
-              Cây đang hơi héo…
-            </div>
-          )}
         </div>
-
-        {/* sleep button */}
-        <div className="absolute bottom-3 right-3 flex flex-col items-end gap-2">
-          {allDone && !picking && (
-            <div className="chip bg-cream-100 text-leaf-800 text-xs pop-in">
-              <Icon name="check" size={14} />
-              Xong hết rồi, ngủ thôi!
-            </div>
-          )}
-          <button
-            onClick={onEndDay}
-            disabled={picking}
-            className={`btn btn-wood px-4 py-2 text-sm sm:text-base ${allDone && !picking ? "glow-pulse" : ""}`}
-            title="Kết thúc ngày, nhận nhiệm vụ mới"
-          >
-            <Icon name="moon" size={17} />
-            Đi ngủ · sang Ngày {state.day + 1}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

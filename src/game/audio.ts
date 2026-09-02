@@ -115,13 +115,13 @@ export const sfx = {
     tone({ f: 1175, at: 0.08, dur: 0.12, type: "square", vol: 0.1 });
   },
   deny() { tone({ f: 196, f2: 150, dur: 0.2, type: "sawtooth", vol: 0.08 }); },
-  sleep() {
-    tone({ f: 440, f2: 220, dur: 0.5, type: "sine", vol: 0.12 });
-    tone({ f: 330, f2: 165, at: 0.3, dur: 0.6, type: "sine", vol: 0.1 });
-  },
   plant() {
     tone({ f: 300, f2: 620, dur: 0.18, type: "triangle", vol: 0.14 });
     tone({ f: 620, f2: 900, at: 0.16, dur: 0.16, type: "triangle", vol: 0.12 });
+  },
+  sleep() {
+    tone({ f: 440, f2: 220, dur: 0.5, type: "sine", vol: 0.12 });
+    tone({ f: 330, f2: 165, at: 0.3, dur: 0.6, type: "sine", vol: 0.1 });
   },
   equip() { tone({ f: 740, dur: 0.06, type: "triangle", vol: 0.12 }); tone({ f: 988, at: 0.06, dur: 0.09, type: "triangle", vol: 0.12 }); },
 };

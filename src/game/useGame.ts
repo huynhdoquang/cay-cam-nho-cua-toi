@@ -1,17 +1,25 @@
-import { useEffect, useRef, useState } from "react";
-import type { CustomDef, GameState, PoseId, TaskInst, TreeId, WaterOutcome } from "./types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
+import type { FruitType, GameState, PoseId, TaskKind } from "./types";
 import {
-  BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, DAILY_XP_CAP, FERT_BONUS, FERT_CHARGES,
-  HAIR_COLORS, MAX_LEVEL, PITY_LIMIT, PRESETS, SHOP, SHIRT_COLORS, STREAK_BONUS_RATE,
-  TREES, buildDailyTasks, colorOf, levelFromXp, randInt,
+  ABSENCE_DROP_DAYS, BONUS_STREAK, CRIT_CHANCE, CRIT_MULT, CYCLE_BLOOM_DAYS, CYCLE_RIPE_AT,
+  DAILY_XP_CAP, DECOR_FLAGS, FERT_BONUS, FERT_CHARGES, FIRST_HARVEST_FRUITS, FIRST_HARVEST_LEVEL,
+  FOG_FIRST_HARVEST, FOG_REGROWTH_HARVEST, FOG_START, FRUIT_REGROWTH_COUNT, GIANT_MULT,
+  HAIR_COLORS, LANDMARKS, PITY_LIMIT, SHOP, SHIRT_COLORS, STREAK_BONUS_RATE, TREE,
+  buildDailyTasks, colorOf, generateFruitManifest, levelFromXp, randInt, rollGift, xpForLevel,
 } from "./data";
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 import type { GardenEngine } from "./engine";
 import { setMuted as setAudioMuted, sfx, unlockAudio } from "./audio";
 
-const SAVE_KEY = "cay-cam-nho-v1";
-
 export type ToastKind = "info" | "success" | "warn" | "berry" | "level";
 export interface ToastMsg { id: number; text: string; kind: ToastKind }
+
+export const bridge: { toast: ((text: string, kind?: ToastKind) => void) | null } = { toast: null };
 
 export interface GameApi {
   start: (fresh: boolean) => void;
@@ -20,31 +28,57 @@ export interface GameApi {
   endDay: () => void;
   buy: (itemId: string) => void;
   equip: (slot: "hair" | "shirt" | "hat", id: string) => void;
-  addCustom: (d: { name: string; pose: PoseId; kind: "binary" | "quant"; target: number; unit: string; step: number }) => boolean;
+  addCustom: (d: { name: string; pose: PoseId; kind: TaskKind; target: number; unit: string; step: number; repeat?: number[]; tplId?: string }) => boolean;
   removeCustom: (id: string) => void;
-  onFruitPick: (x: number, y: number) => void;
-  plantTree: (id: TreeId) => void;
+  setReminder: (enabled: boolean, time: string) => void;
+  onFruitPick: (index: number, x: number, y: number) => void;
+  closeHarvest: () => void;
+  dismissStory: () => void;
+  clearNotice: () => void;
   toggleMute: () => void;
+  /** Các công cụ dành riêng cho việc test / cân bằng game. */
+  test: {
+    addBerries: (n: number) => void;
+    addXp: (n: number) => void;
+    setLevel: (lv: number) => void;
+    completeAll: () => void;
+    nextDay: () => void;
+    spawnFruits: () => void;
+    forceHarvest: () => void;
+    clearFog: () => void;
+    unlockAll: () => void;
+    reset: () => void;
+  };
 }
+
+const KEY = "cay-cam-nho-v1";
 
 function freshState(): GameState {
   return {
     started: false,
     hasSave: false,
-    berries: 20,
+    notice: null,
+    fog: FOG_START,
+    discovered: [],
+    pendingStories: [],
+    lastDate: todayStr(),
+    berries: 0,
     day: 1,
     streak: 0,
     bestStreak: 0,
     xp: 0,
     xpToday: 0,
     level: 1,
-    treeType: "cam",
-    unlockedTrees: ["cam"],
     harvests: 0,
     totalBerries: 0,
     fruitsLeft: 0,
     harvestPhase: "none",
     lastHarvestGain: 0,
+    fruitManifest: [],
+    cycleDay: 0,
+    inCycle: false,
+    reminder: { enabled: false, time: "20:00" },
+    history: [],
     tasks: buildDailyTasks(1, []),
     customs: [],
     owned: [],
@@ -52,221 +86,358 @@ function freshState(): GameState {
     shirt: "shirt_default",
     hat: null,
     fertCharges: 0,
-    freezes: 1,
+    freezes: 0,
+    luckyCharges: 0,
     pity: 0,
     wilted: false,
     muted: false,
   };
 }
 
-function loadSave(): GameState | null {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<GameState>;
-    return { ...freshState(), ...parsed, started: false, hasSave: true };
-  } catch {
-    return null;
+export function skinColors(s: GameState): { hair: string; shirt: string; hat: string | null } {
+  return {
+    hair: colorOf(HAIR_COLORS, s.hair, "#7a4a21"),
+    shirt: colorOf(SHIRT_COLORS, s.shirt, "#58b84e"),
+    hat: s.hat,
+  };
+}
+
+/** Pha hiển thị của chu kỳ ra quả (chỉ bloom/green — quả chín vẽ riêng). */
+export function cyclePhaseOf(inCycle: boolean, cycleDay: number): "none" | "bloom" | "green" {
+  if (!inCycle || cycleDay < 1) return "none";
+  if (cycleDay <= CYCLE_BLOOM_DAYS) return "bloom";
+  if (cycleDay < CYCLE_RIPE_AT) return "green";
+  return "none";
+}
+
+/** Mở hộp quà bí ẩn: sửa trực tiếp `s`, trả về phần thưởng để hiển thị. */
+function applyGift(s: GameState, x: number, y: number): { gain: number; label: string } {
+  const g = rollGift();
+  switch (g.kind) {
+    case "berries": {
+      const n = randInt(g.min ?? 10, g.max ?? 30);
+      s.berries += n;
+      s.totalBerries += n;
+      engGlobal()?.spawnBerryBurst({ amount: n, crit: false });
+      return { gain: n, label: `Quà: +${n} berry!` };
+    }
+    case "xp": {
+      const n = g.amount ?? 30;
+      gainXp(s, n);
+      return { gain: 0, label: `Quà: +${n} KN!` };
+    }
+    case "fert": {
+      s.fertCharges += FERT_CHARGES;
+      return { gain: 0, label: "Quà: Phân bón thần kỳ!" };
+    }
+    case "freeze": {
+      s.freezes += 1;
+      return { gain: 0, label: "Quà: Băng bảo vệ!" };
+    }
+    case "cosmetic": {
+      const unowned = SHOP.filter((i) => i.kind === "skin" && i.slot && !s.owned.includes(i.id));
+      if (unowned.length === 0) {
+        s.berries += 20;
+        s.totalBerries += 20;
+        return { gain: 20, label: "Quà: +20 berry!" };
+      }
+      const pick = unowned[Math.floor(Math.random() * unowned.length)];
+      s.owned = [...s.owned, pick.id];
+      engGlobal()?.sparkAt(x, y, "#9c8ce8");
+      return { gain: 0, label: `Quà: ${pick.name}!` };
+    }
+    default: {
+      s.berries += 5;
+      s.totalBerries += 5;
+      return { gain: 5, label: "Bé Sương ôm bạn +5 berry" };
+    }
   }
 }
 
-interface Fx {
-  engineRef: React.MutableRefObject<GardenEngine | null>;
-  toast: (text: string, kind?: ToastKind) => void;
+/** Cộng KN thuần (quà bí ẩn / test), tự tính cấp và hiệu ứng. */
+function gainXp(s: GameState, amount: number) {
+  const prevLevel = s.level;
+  s.xp += amount;
+  s.level = levelFromXp(s.xp);
+  if (s.level > prevLevel) {
+    setTimeout(() => {
+      engGlobal()?.levelUpFx();
+      sfx.levelup();
+    }, 300);
+    bridge.toast?.(`Cây cam lên cấp ${s.level}!`, "level");
+  }
 }
 
-export function useGame(fx: Fx): { state: GameState; api: GameApi } {
+export function useGame({
+  engineRef,
+  toast,
+}: {
+  engineRef: MutableRefObject<GardenEngine | null>;
+  toast: (text: string, kind?: ToastKind) => void;
+}): { state: GameState; api: GameApi } {
   const [state, setState] = useState<GameState>(() => {
-    const s = freshState();
-    s.hasSave = loadSave() != null;
-    return s;
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const s = JSON.parse(raw) as GameState;
+        const merged = { ...freshState(), ...s, started: false, hasSave: true };
+        // loss aversion nhẹ: vắng >= N ngày → cây buồn, rụng 1 quả (nếu có), mất streak
+        const gap = Math.floor(
+          (Date.parse(todayStr()) - Date.parse(merged.lastDate || todayStr())) / 86400000
+        );
+        if (!Number.isNaN(gap) && gap >= ABSENCE_DROP_DAYS) {
+          if (merged.fruitsLeft > 0) {
+            merged.fruitsLeft -= 1;
+            merged.notice = `Cây nhớ bạn… vắng ${gap} ngày, một quả cam đã rụng. Về kịp lúc rồi!`;
+          } else if (merged.streak > 0) {
+            merged.notice = `Bạn vắng ${gap} ngày — chuỗi ${merged.streak} ngày đành dừng lại. Cây vẫn ở đây đợi bạn!`;
+          }
+          merged.streak = 0;
+          merged.wilted = true;
+        }
+        merged.lastDate = todayStr();
+        return merged;
+      }
+    } catch { /* noop */ }
+    return freshState();
   });
   const ref = useRef(state);
   ref.current = state;
 
-  // persist
+  // persist (kèm ngày chơi thật để tính vắng nhà)
   useEffect(() => {
-    if (!state.started) return;
     try {
-      const { started: _s, hasSave: _h, ...rest } = state;
-      localStorage.setItem(SAVE_KEY, JSON.stringify(rest));
-    } catch { /* private mode */ }
+      localStorage.setItem(KEY, JSON.stringify({ ...state, started: true, lastDate: todayStr() }));
+    } catch { /* noop */ }
   }, [state]);
 
-  const eng = () => fx.engineRef.current;
+  useEffect(() => {
+    setAudioMuted(state.muted);
+  }, [state.muted]);
+
+  useEffect(() => {
+    bindEngine(engineRef);
+  }, [engineRef]);
+
+  const eng = useCallback(() => engineRef.current, [engineRef]);
+
+  const fx = { toast };
 
   const api: GameApi = {
     start(fresh: boolean) {
       unlockAudio();
-      let next: GameState;
-      let resumed = false;
       if (fresh) {
-        try { localStorage.removeItem(SAVE_KEY); } catch { /* noop */ }
-        next = { ...freshState(), started: true };
-      } else {
-        const saved = loadSave();
-        resumed = saved != null;
-        next = { ...(saved ?? freshState()), started: true };
-      }
-      setAudioMuted(next.muted);
-      setState(next);
-      sfx.plant();
-      if (resumed) fx.toast(`Chào mừng trở lại! Ngày ${next.day} bắt đầu.`, "info");
-      setTimeout(() => {
+        try { localStorage.removeItem(KEY); } catch { /* noop */ }
+        const s = freshState();
+        s.started = true;
+        setState(s);
         const e = eng();
         if (e) {
-          e.resetTree();
-          e.setLevel(next.level);
-          e.setWilted(next.wilted);
-          if (next.level >= MAX_LEVEL) e.syncFruits(next.fruitsLeft, TREES[next.treeType].fruits);
+          e.setLevel(1);
+          e.setTree(TREE);
         }
-      }, 60);
+        sfx.plant();
+        fx.toast("Hạt cam đã được gieo. Chúc bạn một mùa bội thu!", "success");
+        return;
+      }
+      setState((prev) => ({ ...prev, started: true }));
+      sfx.click();
     },
 
     completeTask(uid: string) {
       const s = ref.current;
-      if (!s.started) return;
-      const task = s.tasks.find((t) => t.uid === uid);
-      if (!task || task.done) return;
-
-      if (task.kind === "quant" && task.progress + task.step < task.target) {
-        setState({
-          ...s,
-          tasks: s.tasks.map((t) => (t.uid === uid ? { ...t, progress: Math.min(t.target, t.progress + t.step) } : t)),
-        });
+      const t = s.tasks.find((x) => x.uid === uid);
+      if (!t || t.done) return;
+      const progress = t.kind === "binary" ? t.target : Math.min(t.target, t.progress + t.step);
+      const doneNow = progress >= t.target;
+      const tasks = s.tasks.map((x) => (x.uid === uid ? { ...x, progress, done: doneNow } : x));
+      const next: GameState = { ...s, tasks };
+      if (doneNow) {
+        water(next, t.xp, t.kind);
+      } else {
         sfx.click();
-        return;
       }
-
-      const { next, out } = waterTask(s, task);
       setState(next);
-      playWaterFx(out);
     },
 
     stepBack(uid: string) {
       const s = ref.current;
-      const task = s.tasks.find((t) => t.uid === uid);
-      if (!task || task.done || task.kind !== "quant") return;
+      const t = s.tasks.find((x) => x.uid === uid);
+      if (!t || t.done || t.progress <= 0) return;
       setState({
         ...s,
-        tasks: s.tasks.map((t) => (t.uid === uid ? { ...t, progress: Math.max(0, t.progress - t.step) } : t)),
+        tasks: s.tasks.map((x) => (x.uid === uid ? { ...x, progress: Math.max(0, x.progress - x.step) } : x)),
       });
       sfx.click();
     },
 
     endDay() {
       const s = ref.current;
-      if (!s.started) return;
-      const allDone = s.tasks.length > 0 && s.tasks.every((t) => t.done);
-      const day = s.day + 1;
-      let { streak, freezes, berries, totalBerries } = s;
-      let bestStreak = s.bestStreak;
+      const doneAll = s.tasks.length > 0 && s.tasks.every((t) => t.done);
+      let streak = s.streak;
+      let freezes = s.freezes;
       let wilted = false;
-      let bonus = 0;
-
-      if (allDone) {
-        streak = s.streak + 1;
-        bestStreak = Math.max(bestStreak, streak);
-        bonus = 5 + Math.min(streak, 25);
-        berries += bonus;
-        totalBerries += bonus;
-      } else if (s.freezes > 0) {
+      if (doneAll) {
+        streak += 1;
+      } else if (freezes > 0) {
         freezes -= 1;
-        fx.toast("Băng bảo vệ đã tan để giữ streak của bạn!", "info");
+        fx.toast("Băng bảo vệ đã giữ streak cho bạn!", "warn");
       } else {
+        if (streak > 0) fx.toast("Mất streak hôm nay rồi — mai tưới tiếp nhé!", "warn");
         streak = 0;
         wilted = true;
       }
+      const day = s.day + 1;
+      // chu kỳ ra quả sau thu hoạch: nở hoa → quả xanh → quả chín
+      let fruitsLeft = s.fruitsLeft;
+      let harvestPhase = s.harvestPhase;
+      let fruitManifest = s.fruitManifest;
+      let cycleDay = s.cycleDay;
+      const inCycle = s.inCycle;
 
-      setState({
-        ...s, day, streak, bestStreak, freezes, berries, totalBerries, wilted,
+      if (inCycle) {
+        cycleDay += 1;
+        if (cycleDay === 1) {
+          fx.toast("Cây cam đang nở hoa trắng muốt…", "info");
+        } else if (cycleDay === CYCLE_BLOOM_DAYS + 1) {
+          fx.toast("Hoa đã đậu thành những quả cam non xanh mướt!", "info");
+        }
+        if (
+          cycleDay >= CYCLE_RIPE_AT &&
+          harvestPhase === "none" &&
+          fruitsLeft === 0 &&
+          s.level >= FIRST_HARVEST_LEVEL
+        ) {
+          fruitManifest = generateFruitManifest(FRUIT_REGROWTH_COUNT);
+          fruitsLeft = FRUIT_REGROWTH_COUNT;
+          harvestPhase = "picking";
+          fx.toast(`Cây cam chín ${FRUIT_REGROWTH_COUNT} quả mới — ra hái thôi!`, "berry");
+          setTimeout(() => eng()?.ripeFx(), 300);
+          setTimeout(() => sfx.ripe(), 300);
+        }
+      }
+
+      const bonus = doneAll ? 5 + Math.min(20, streak) : 0;
+      const next: GameState = {
+        ...s,
+        day,
+        streak,
+        bestStreak: Math.max(s.bestStreak, streak),
+        freezes,
+        wilted,
         xpToday: 0,
         tasks: buildDailyTasks(day, s.customs),
-      });
-
+        fruitsLeft,
+        harvestPhase,
+        fruitManifest,
+        cycleDay,
+        berries: s.berries + bonus,
+        totalBerries: s.totalBerries + bonus,
+      };
+      if (bonus > 0) fx.toast(`Thưởng trọn ngày +${bonus} berry!`, "berry");
       const e = eng();
-      e?.nightPulse();
-      e?.sleepChibi();
-      setTimeout(() => e?.setWilted(wilted), 900);
-      sfx.sleep();
-      if (allDone) {
-        fx.toast(`Ngày trọn vẹn! Streak ${streak} — thưởng +${bonus} berry`, "success");
-        setTimeout(() => sfx.drop(), 500);
-      } else if (wilted) {
-        fx.toast("Cây hơi héo một chút... ngày mai cố lên nhé!", "warn");
+      e?.setWilted(wilted);
+      e?.setCyclePhase(cyclePhaseOf(inCycle, cycleDay));
+      if (harvestPhase === "picking" && fruitsLeft > 0) {
+        e?.setFruitManifest(fruitManifest, fruitsLeft);
       }
+      sfx.sleep();
+      setState(next);
     },
 
     buy(itemId: string) {
       const s = ref.current;
       const item = SHOP.find((i) => i.id === itemId);
-      if (!item) return;
-      const already = s.owned.includes(itemId) ||
-        (item.kind === "seed" && item.treeId && s.unlockedTrees.includes(item.treeId));
-      if (already) return;
-      if (s.berries < item.cost) {
+      if (!item || s.berries < item.cost || s.owned.includes(itemId)) {
         sfx.deny();
-        fx.toast("Chưa đủ berry rồi! Tưới cây thêm nhé.", "warn");
         return;
       }
-      let next: GameState = { ...s, berries: s.berries - item.cost };
-      if (item.id === "fertilizer") next = { ...next, fertCharges: next.fertCharges + FERT_CHARGES };
-      else if (item.id === "freeze") next = { ...next, freezes: next.freezes + 1 };
-      else if (item.kind === "seed" && item.treeId) next = { ...next, unlockedTrees: [...next.unlockedTrees, item.treeId] };
-      else next = { ...next, owned: [...next.owned, itemId] };
-      setState(next);
+      const next: GameState = { ...s, berries: s.berries - item.cost, owned: [...s.owned, itemId] };
+      if (itemId === "fertilizer") next.fertCharges += FERT_CHARGES;
+      if (itemId === "freeze") next.freezes += 1;
+      if (itemId === "charm") next.luckyCharges += 3;
+      if (itemId === "candy") {
+        // hoàn thành ngay 1 nhiệm vụ chưa xong ngẫu nhiên
+        const open = next.tasks.filter((t) => !t.done);
+        if (open.length === 0) {
+          fx.toast("Hôm nay bé Cam đã xong hết việc rồi!", "info");
+        } else {
+          const t = open[Math.floor(Math.random() * open.length)];
+          next.tasks = next.tasks.map((x) =>
+            x.uid === t.uid ? { ...x, progress: x.target, done: true } : x
+          );
+          water(next, t.xp, t.kind);
+          fx.toast(`Bé Cam ăn kẹo và hoàn thành “${t.name}”!`, "success");
+        }
+      }
+      if (item.kind === "decor") {
+        const has = (id: string) => next.owned.includes(id);
+        eng()?.setDecor({
+          fence: has("decor_fence"),
+          lantern: has("decor_lantern"),
+          mushrooms: has("decor_mushrooms"),
+          flowers: has("decor_flowers"),
+          pond: has("decor_pond"),
+          scarecrow: has("decor_scarecrow"),
+          swing: has("decor_swing"),
+        });
+      }
       sfx.buy();
-      fx.toast(`Đã mua ${item.name}!`, "berry");
+      if (itemId !== "candy") fx.toast(`Đã mua ${item.name}!`, "success");
+      setState(next);
     },
 
-    equip(slot, id) {
+    equip(slot, id: string) {
       const s = ref.current;
-      if (slot === "hat") {
-        const none = s.hat === id;
-        setState({ ...s, hat: none ? null : id });
-      } else if (slot === "hair") {
-        setState({ ...s, hair: id });
-      } else {
-        setState({ ...s, shirt: id });
-      }
+      const next = { ...s };
+      if (slot === "hair") next.hair = id;
+      if (slot === "shirt") next.shirt = id;
+      if (slot === "hat") next.hat = id === "hat_none" ? null : id;
+      const e = eng();
+      e?.setSkin({
+        hair: colorOf(HAIR_COLORS, next.hair, "#7a4a21"),
+        shirt: colorOf(SHIRT_COLORS, next.shirt, "#58b84e"),
+        hat: next.hat,
+      });
       sfx.equip();
+      setState(next);
     },
 
     addCustom(d) {
       const s = ref.current;
       const name = d.name.trim();
-      if (!name) return false;
-      if (s.customs.length >= 6) {
-        fx.toast("Tối đa 6 nhiệm vụ tự tạo thôi nhé!", "warn");
+      if (!name) {
+        fx.toast("Đặt tên nhiệm vụ trước đã nhé!", "warn");
         return false;
       }
-      const def: CustomDef = {
-        id: `u${Date.now()}`,
-        name: name.slice(0, 42),
-        pose: d.pose,
-        kind: d.kind,
-        target: d.kind === "quant" ? Math.max(1, Math.min(999, d.target)) : 1,
-        unit: d.kind === "quant" ? (d.unit.trim() || "lần").slice(0, 12) : "",
-        step: d.kind === "quant" ? Math.max(1, Math.min(99, d.step)) : 1,
-        xp: d.kind === "quant" ? 16 : 12,
-      };
-      const instTask: TaskInst = {
-        uid: `c-${s.day}-x-${def.id}`,
-        defId: def.id,
-        custom: true,
-        name: def.name,
-        pose: def.pose,
-        kind: def.kind,
-        target: def.target,
-        unit: def.unit,
-        step: def.step,
-        xp: def.xp,
-        progress: 0,
-        done: false,
-      };
-      setState({ ...s, customs: [...s.customs, def], tasks: [...s.tasks, instTask] });
+      const id = `custom-${Date.now()}`;
+      const repeat = d.repeat && d.repeat.length > 0 ? d.repeat : undefined;
+      const customs = [...s.customs, { id, ...d, name, repeat, tplId: d.tplId, xp: d.kind === "binary" ? 12 : 16 }];
+      // hôm nay có nằm trong lịch lặp? (index T2..CN = (jsDay+6)%7)
+      const t2cn = (new Date().getDay() + 6) % 7;
+      const showToday = !repeat || repeat.includes(t2cn);
+      const tasks = showToday
+        ? [...s.tasks, {
+            uid: `c-${s.day}-${id}`,
+            defId: null,
+            custom: true,
+            name,
+            pose: d.pose,
+            kind: d.kind,
+            target: d.kind === "binary" ? 1 : d.target,
+            unit: d.kind === "binary" ? "" : d.unit,
+            step: d.kind === "binary" ? 1 : d.step,
+            xp: d.kind === "binary" ? 12 : 16,
+            progress: 0,
+            done: false,
+          }]
+        : s.tasks;
+      setState({ ...s, customs, tasks });
       sfx.check();
-      fx.toast(`Đã thêm "${def.name}" vào hôm nay!`, "success");
+      fx.toast(
+        showToday ? `Đã thêm “${name}” — một bong bóng mới xuất hiện!` : `Đã thêm “${name}” — sẽ xuất hiện vào ngày lặp của nó!`,
+        "success"
+      );
       return true;
     },
 
@@ -275,82 +446,107 @@ export function useGame(fx: Fx): { state: GameState; api: GameApi } {
       setState({
         ...s,
         customs: s.customs.filter((c) => c.id !== id),
-        tasks: s.tasks.filter((t) => !(t.custom && t.defId === id)),
+        tasks: s.tasks.filter((t) => !(t.custom && t.uid.includes(id))),
       });
       sfx.click();
     },
 
-    onFruitPick(x: number, y: number) {
+    onFruitPick(index: number, x: number, y: number) {
       const s = ref.current;
-      if (s.harvestPhase !== "picking" || s.fruitsLeft <= 0) return;
-      const tree = TREES[s.treeType];
-      const crit = Math.random() < 0.08;
-      let gain = tree.value;
-      if (crit) gain *= 3;
-      const left = s.fruitsLeft - 1;
-      let acc = s.lastHarvestGain + gain;
+      if (s.fruitsLeft <= 0) return;
+      const type: FruitType = s.fruitManifest[index] ?? "normal";
+      const isFirst = s.harvests === 0;
+      const per = isFirst ? TREE.value : TREE.regrowthValue;
+      const fruitsLeft = s.fruitsLeft - 1;
 
-      let next: GameState = {
-        ...s,
-        berries: s.berries + gain,
-        totalBerries: s.totalBerries + gain,
-        fruitsLeft: left,
-        lastHarvestGain: acc,
-      };
+      // đánh dấu quả đã hái để không tái sử dụng
+      const fruitManifest = s.fruitManifest.map((t, i) => (i === index ? "normal" : t)) as FruitType[];
+      const next: GameState = { ...s, fruitManifest };
 
+      let gain = per;
       const e = eng();
-      e?.floatText(x, y, `+${gain}${crit ? "!" : ""}`, crit ? "#ffd93d" : "#ffe0ad", crit);
-      if (crit) sfx.crit(); else sfx.pop();
-
-      if (left === 0) {
-        const bonus = 20 + s.streak * 2;
-        acc += bonus;
-        let unlockedTrees = s.unlockedTrees;
-        let unlockMsg: string | null = null;
-        if (s.treeType === "cam" && !unlockedTrees.includes("cherry")) {
-          unlockedTrees = [...unlockedTrees, "cherry"];
-          unlockMsg = "Đã mở khóa hạt giống Anh Đào trong Cửa hàng!";
-        } else if (s.treeType === "cherry" && !unlockedTrees.includes("tao")) {
-          unlockedTrees = [...unlockedTrees, "tao"];
-          unlockMsg = "Đã mở khóa hạt giống Táo Đỏ trong Cửa hàng!";
-        }
-        next = {
-          ...next,
-          berries: next.berries + bonus,
-          totalBerries: next.totalBerries + bonus,
-          fruitsLeft: 0,
-          harvestPhase: "done",
-          lastHarvestGain: acc,
-          harvests: s.harvests + 1,
-          unlockedTrees,
-        };
-        e?.celebrate();
-        sfx.harvest();
-        if (unlockMsg) setTimeout(() => fx.toast(unlockMsg!, "level"), 1200);
+      if (type === "giant") {
+        gain = per * GIANT_MULT;
+        e?.floatText(x, y, `SIÊU BỰ! +${gain}`, "#ffd93d", true);
+        e?.sparkAt(x, y, "#ffd93d");
+        sfx.crit();
+      } else if (type === "gift") {
+        const r = applyGift(next, x, y);
+        gain = r.gain;
+        e?.floatText(x, y, r.label, "#c0b5f2", false);
+        sfx.buy();
+      } else {
+        e?.floatText(x, y, `+${gain}`, "#c0b5f2", false);
+        sfx.pop();
       }
-      setState(next);
+
+      let harvestPhase = s.harvestPhase;
+      let harvests = s.harvests;
+      let lastHarvestGain = s.lastHarvestGain;
+      if (fruitsLeft === 0) {
+        harvestPhase = "done";
+        harvests += 1;
+        const bonus = 25 + harvests * 5;
+        lastHarvestGain = per + bonus;
+        const total = gain + bonus;
+        sfx.harvest();
+        e?.celebrate();
+
+        // narrative layer: mỗi mùa thu hoạch làm sương mù tan bớt
+        const fog = Math.max(0, s.fog - (isFirst ? FOG_FIRST_HARVEST : FOG_REGROWTH_HARVEST));
+        const crossed = LANDMARKS.filter((l) => fog <= l.at && !s.discovered.some((d) => d.id === l.id));
+        const discovered = [...s.discovered, ...crossed.map((l) => ({ id: l.id, day: s.day }))];
+        const pendingStories = crossed.length
+          ? [...s.pendingStories, ...crossed.map((l) => l.id)]
+          : s.pendingStories;
+        if (crossed.length) {
+          setTimeout(() => {
+            engGlobal()?.revealFx();
+            sfx.levelup();
+          }, 900);
+        }
+
+        setState({
+          ...next,
+          fruitsLeft,
+          harvestPhase,
+          harvests,
+          lastHarvestGain: total,
+          berries: next.berries + total,
+          totalBerries: next.totalBerries + total,
+          fog,
+          discovered,
+          pendingStories,
+          // bắt đầu chu kỳ nở hoa → quả xanh → quả chín tiếp theo
+          inCycle: true,
+          cycleDay: 0,
+          fruitManifest: [],
+        });
+        return;
+      }
+      setState({
+        ...next,
+        fruitsLeft,
+        berries: next.berries + gain,
+        totalBerries: next.totalBerries + gain,
+      });
     },
 
-    plantTree(id: TreeId) {
+    closeHarvest() {
       const s = ref.current;
-      if (!s.unlockedTrees.includes(id)) return;
-      setState({
-        ...s,
-        treeType: id,
-        level: 1,
-        xp: 0,
-        xpToday: 0,
-        fruitsLeft: 0,
-        harvestPhase: "none",
-        lastHarvestGain: 0,
-        wilted: false,
-        pity: 0,
-      });
-      const e = eng();
-      e?.resetTree();
-      e?.setLevel(1);
-      sfx.plant();
-      fx.toast(`Đã gieo hạt ${TREES[id].name}! Hành trình 10 cấp bắt đầu.`, "success");
+      setState({ ...s, harvestPhase: "none" });
+      sfx.click();
+    },
+
+    dismissStory() {
+      const s = ref.current;
+      setState({ ...s, pendingStories: s.pendingStories.slice(1) });
+      sfx.click();
+    },
+
+    clearNotice() {
+      const s = ref.current;
+      if (s.notice) setState({ ...s, notice: null });
     },
 
     toggleMute() {
@@ -360,97 +556,167 @@ export function useGame(fx: Fx): { state: GameState; api: GameApi } {
       setState({ ...s, muted: m });
       if (!m) sfx.click();
     },
+
+    /* ---------- TEST MODE ---------- */
+    test: {
+      addBerries(n) {
+        setState((p) => ({ ...p, berries: p.berries + n, totalBerries: p.totalBerries + n }));
+        fx.toast(`[test] +${n} berry`, "info");
+      },
+      addXp(n) {
+        setState((p) => {
+          const c = { ...p };
+          gainXp(c, n);
+          return c;
+        });
+        fx.toast(`[test] +${n} KN`, "info");
+      },
+      setLevel(lv) {
+        setState((p) => {
+          const xp = xpForLevel(lv);
+          return { ...p, xp, level: lv };
+        });
+        eng()?.setLevel(lv);
+        fx.toast(`[test] cấp ${lv}`, "info");
+      },
+      completeAll() {
+        setState((p) => {
+          const c = { ...p };
+          c.tasks = c.tasks.map((t) => (t.done ? t : { ...t, progress: t.target, done: true }));
+          return c;
+        });
+        fx.toast("[test] xong hết nhiệm vụ", "success");
+      },
+      nextDay() {
+        api.endDay();
+        fx.toast("[test] sang ngày mới", "info");
+      },
+      spawnFruits() {
+        setState((p) => {
+          if (p.fruitsLeft > 0) return p;
+          const manifest = generateFruitManifest(FIRST_HARVEST_FRUITS);
+          setTimeout(() => eng()?.setFruitManifest(manifest, FIRST_HARVEST_FRUITS), 50);
+          return { ...p, fruitManifest: manifest, fruitsLeft: FIRST_HARVEST_FRUITS, harvestPhase: "picking" };
+        });
+        fx.toast("[test] spawn quả chín", "berry");
+      },
+      forceHarvest() {
+        setState((p) => {
+          if (p.fruitsLeft === 0) return p;
+          const gain = p.fruitsLeft * (p.harvests === 0 ? TREE.value : TREE.regrowthValue) + 25;
+          return {
+            ...p,
+            fruitsLeft: 0,
+            harvestPhase: "done",
+            harvests: p.harvests + 1,
+            lastHarvestGain: gain,
+            berries: p.berries + gain,
+            totalBerries: p.totalBerries + gain,
+            inCycle: true,
+            cycleDay: 0,
+            fruitManifest: [],
+          };
+        });
+        fx.toast("[test] thu hoạch ngay", "level");
+      },
+      clearFog() {
+        setState((p) => ({ ...p, fog: 0, discovered: LANDMARKS.map((l) => ({ id: l.id, day: p.day })) }));
+        eng()?.setFog(0);
+        eng()?.setDiscovered(LANDMARKS.map((l) => l.id));
+        fx.toast("[test] tan hết sương", "info");
+      },
+      unlockAll() {
+        setState((p) => ({ ...p, owned: SHOP.filter((i) => i.kind !== "consumable").map((i) => i.id) }));
+        fx.toast("[test] mở khóa mọi đồ", "info");
+      },
+      reset() {
+        try { localStorage.removeItem(KEY); } catch { /* noop */ }
+        const s = freshState();
+        s.started = true;
+        setState(s);
+        eng()?.resetTree();
+        fx.toast("[test] reset game", "warn");
+      },
+    },
   };
 
   return { state, api };
 }
 
-/* ---------- task completion core ---------- */
+/* ---------- tưới cây: +KN, rơi berry, lên cấp ---------- */
 
-function waterTask(s: GameState, task: TaskInst): { next: GameState; out: WaterOutcome } {
-  const quant = task.kind === "quant";
-  let xpGain = task.xp + randInt(-2, 2);
+function water(s: GameState, baseXp: number, kind: TaskKind) {
   const capped = s.xpToday >= DAILY_XP_CAP;
-  if (capped) xpGain = Math.max(2, Math.round(xpGain * 0.2));
-  const xp = s.xp + xpGain;
-  const xpToday = s.xpToday + xpGain;
+  const gained = capped ? Math.max(2, Math.round(baseXp * 0.2)) : baseXp;
+  s.xp += gained;
+  s.xpToday += baseXp;
+  const prevLevel = s.level;
+  const newLevel = levelFromXp(s.xp);
+  const leveled = newLevel > prevLevel;
+  s.level = newLevel;
 
-  const hasFert = s.fertCharges > 0;
-  let rate = (quant ? 0.7 : 0.4) + (s.streak >= BONUS_STREAK ? STREAK_BONUS_RATE : 0) + (hasFert ? FERT_BONUS : 0);
-  rate = Math.min(rate, 0.97);
-  const pity = s.pity + 1;
-  const dropped = Math.random() < rate || pity >= PITY_LIMIT;
-  let amount = 0;
-  let crit = false;
-  if (dropped) {
-    amount = quant ? randInt(3, 8) : randInt(1, 3);
-    crit = Math.random() < CRIT_CHANCE;
-    if (crit) amount *= CRIT_MULT;
-  }
-
-  const newLevel = Math.min(levelFromXp(xp), MAX_LEVEL);
-  const leveledTo = newLevel > s.level ? newLevel : null;
-  const becameRipe = newLevel >= MAX_LEVEL && s.level < MAX_LEVEL;
-  const tree = TREES[s.treeType];
-
-  const next: GameState = {
-    ...s,
-    xp,
-    xpToday,
-    berries: s.berries + amount,
-    totalBerries: s.totalBerries + amount,
-    pity: dropped ? 0 : pity,
-    fertCharges: hasFert ? s.fertCharges - 1 : s.fertCharges,
-    level: newLevel,
-    fruitsLeft: becameRipe ? tree.fruits : s.fruitsLeft,
-    harvestPhase: becameRipe ? "picking" : s.harvestPhase,
-    tasks: s.tasks.map((t) => (t.uid === task.uid ? { ...t, progress: t.target, done: true } : t)),
-  };
-  return { next, out: { xp: xpGain, capped, dropped, amount, crit, leveledTo, becameRipe } };
-}
-
-function playWaterFx(out: WaterOutcome) {
-  // engine is read lazily through window-level callback set by GardenCanvas? No —
-  // we pass via closure in useGame; here we use a small event bridge.
-  const e = bridge.engine;
+  const e = engGlobal();
   e?.water();
+  e?.spawnXpFloater(gained, capped);
   sfx.water();
-  setTimeout(() => sfx.check(), 250);
-  setTimeout(() => e?.spawnXpFloater(out.xp, out.capped), 350);
-  if (out.dropped) {
+  if (leveled) {
     setTimeout(() => {
-      e?.spawnBerryBurst({ amount: out.amount, crit: out.crit });
-      if (out.crit) sfx.crit(); else sfx.drop();
-    }, 850);
-  }
-  if (out.leveledTo != null) {
-    setTimeout(() => {
-      e?.levelUpFx();
+      engGlobal()?.levelUpFx();
       sfx.levelup();
-      bridge.toast(`Cây lên cấp ${out.leveledTo}!`, "level");
-    }, 1150);
+    }, 350);
   }
-  if (out.becameRipe) {
+
+  // lần đầu VƯỢT cấp 10 → đậu quả (có thể kèm quả siêu bự / hộp quà)
+  if (leveled && prevLevel < FIRST_HARVEST_LEVEL && newLevel >= FIRST_HARVEST_LEVEL && s.fruitsLeft === 0 && s.harvestPhase === "none") {
+    s.fruitManifest = generateFruitManifest(FIRST_HARVEST_FRUITS);
+    s.fruitsLeft = FIRST_HARVEST_FRUITS;
+    s.harvestPhase = "picking";
     setTimeout(() => {
-      e?.ripeFx();
+      engGlobal()?.ripeFx();
+      engGlobal()?.setFruitManifest(s.fruitManifest, FIRST_HARVEST_FRUITS);
       sfx.ripe();
-      bridge.toast("Quả đã chín! Nhấn vào từng quả trên cây để thu hoạch.", "success");
-    }, 1650);
+    }, 700);
+    bridge.toast?.(`Cây cam ra ${FIRST_HARVEST_FRUITS} quả chín — chạm để hái từng quả!`, "berry");
   }
+
+  // rơi berry (bùa may mắn: +15% rơi, +10% crit, tính trong lần tưới này)
+  const lucky = s.luckyCharges > 0;
+  s.luckyCharges = Math.max(0, s.luckyCharges - 1);
+  let rate = kind === "quant" ? 0.7 : 0.4;
+  if (s.streak >= BONUS_STREAK) rate += STREAK_BONUS_RATE;
+  if (lucky) rate += 0.15;
+  let fertUsed = false;
+  if (s.fertCharges > 0) {
+    rate += FERT_BONUS;
+    fertUsed = true;
+  }
+  rate = Math.min(0.97, rate);
+  s.pity += 1;
+  let dropped = Math.random() < rate || s.pity > PITY_LIMIT;
+  if (dropped) {
+    const base = kind === "quant" ? randInt(3, 8) : randInt(1, 3);
+    const crit = Math.random() < CRIT_CHANCE + (lucky ? 0.1 : 0);
+    const amount = base * (crit ? CRIT_MULT : 1);
+    s.berries += amount;
+    s.totalBerries += amount;
+    s.pity = 0;
+    if (fertUsed) s.fertCharges = Math.max(0, s.fertCharges - 1);
+    setTimeout(() => {
+      engGlobal()?.spawnBerryBurst({ amount, crit });
+      if (crit) sfx.crit(); else sfx.drop();
+    }, 550);
+    bridge.toast?.(
+      crit ? `CRIT! +${amount} berry — may mắn ngập vườn!` : `+${amount} berry rơi ra!`,
+      crit ? "level" : "berry"
+    );
+  }
+  void dropped;
 }
 
-/* small bridge so water fx can reach engine/toast without prop drilling */
-export const bridge: {
-  engine: GardenEngine | null;
-  toast: (text: string, kind?: ToastKind) => void;
-} = { engine: null, toast: () => {} };
-
-export function skinColors(s: GameState) {
-  return {
-    hair: colorOf(HAIR_COLORS, s.hair, "#7a4a21"),
-    shirt: colorOf(SHIRT_COLORS, s.shirt, "#58b84e"),
-    hat: s.hat,
-  };
+let engHolder: MutableRefObject<GardenEngine | null> | null = null;
+export function bindEngine(ref: MutableRefObject<GardenEngine | null>) {
+  engHolder = ref;
 }
-
-export { PRESETS };
+function engGlobal(): GardenEngine | null {
+  return engHolder?.current ?? null;
+}
